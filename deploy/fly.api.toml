@@ -1,0 +1,36 @@
+# Fly.io deployment config for kerby-api.
+# Deploy: `flyctl deploy --config deploy/fly.api.toml`
+
+app = "kerby-api"
+primary_region = "syd"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[build.args]
+  BIN = "kerby-api"
+
+[env]
+  BIND_ADDR = "0.0.0.0:8080"
+  RUST_LOG = "kerby_api=info,tower_http=info,info"
+  JWT_TTL_SECS = "2592000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

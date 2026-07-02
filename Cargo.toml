@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/api",
+    "crates/worker",
+    "crates/domain",
+]
+
+[workspace.package]
+edition = "2021"
+license = "UNLICENSED"
+authors = ["Kerby <hello@kerby.app>"]
+version = "0.1.0"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+futures-util = "0.3"
+tower_governor = "0.4"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+reqwest = { version = "0.12", features = ["json"] }
+redis = { version = "0.27", features = ["tokio-comp"] }
+dotenvy = "0.15"
+argon2 = "0.5"
+jsonwebtoken = "9"
+async-trait = "0.1"

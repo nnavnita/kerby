@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: kerby-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: kerby
+      POSTGRES_PASSWORD: kerby
+      POSTGRES_DB: kerby
+    volumes:
+      - kerby_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kerby -d kerby"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: kerby-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  kerby_db:

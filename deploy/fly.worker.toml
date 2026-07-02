@@ -1,0 +1,23 @@
+# Fly.io deployment config for kerby-worker.
+# Deploy: `flyctl deploy --config deploy/fly.worker.toml`
+
+app = "kerby-worker"
+primary_region = "syd"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[build.args]
+  BIN = "kerby-worker"
+
+[env]
+  RUST_LOG = "kerby_worker=info,info"
+  SENSOR_POLL_INTERVAL_SECS = "30"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+# Worker has no HTTP surface — no [http_service] block.
+# Keep exactly one machine running so the poll loop never gaps.

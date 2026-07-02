@@ -1,0 +1,42 @@
+[package]
+name = "kerby-api"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "kerby_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kerby-api"
+path = "src/main.rs"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "macros"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dependencies]
+kerby-domain = { path = "../domain" }
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+redis.workspace = true
+dotenvy.workspace = true
+argon2.workspace = true
+jsonwebtoken.workspace = true
+async-trait.workspace = true
+futures-util.workspace = true
+tower_governor.workspace = true
