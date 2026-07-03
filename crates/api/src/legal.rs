@@ -11,7 +11,7 @@ pub fn routes() -> Router<AppState> {
         .route("/legal/privacy", get(privacy))
 }
 
-const CONTACT_EMAIL: &str = "hello@kerby.app";
+const CONTACT_EMAIL: &str = "kerby@nnavnita.com";
 const JURISDICTION: &str = "Victoria, Australia";
 const ENTITY: &str = "Kerby (Melbourne, Australia)";
 

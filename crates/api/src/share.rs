@@ -57,6 +57,9 @@ async fn bay_landing(State(state): State<AppState>, Path(id): Path<String>) -> A
   <p class="muted">{lat:.5}, {lng:.5}</p>
   <a class="btn" href="kerby://bay/{id}">Open in Kerby</a>
   <div style="margin-top: 16px">
+    <a href="https://nnavnita.com/kerby">About Kerby</a>
+  </div>
+  <div style="margin-top: 8px" class="muted">
     <a href="https://apps.apple.com/app/kerby">App Store</a> ·
     <a href="https://play.google.com/store/apps/details?id=app.kerby.mobile">Play Store</a>
   </div>

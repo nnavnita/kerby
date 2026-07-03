@@ -9,7 +9,7 @@ members = [
 [workspace.package]
 edition = "2021"
 license = "UNLICENSED"
-authors = ["Kerby <hello@kerby.app>"]
+authors = ["Kerby <kerby@nnavnita.com>"]
 version = "0.1.0"
 
 [workspace.dependencies]

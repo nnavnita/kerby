@@ -9,7 +9,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.kerby.mobile",
-      "associatedDomains": ["applinks:kerby.app"],
+      "associatedDomains": ["applinks:kerby-api.fly.dev"],
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Kerby needs your location to find parking bays near you and guide you back to your car."
       }
@@ -27,7 +27,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "kerby.app",
+              "host": "kerby-api.fly.dev",
               "pathPrefix": "/share/bay"
             }
           ],
