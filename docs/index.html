@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kerby — find CBD street parking, live</title>
+    <meta
+      name="description"
+      content="Kerby uses City of Melbourne's live parking-sensor data to show which on-street bays are free, right now, near where you're driving to."
+    />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🅿️</text></svg>" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Kerby — Melbourne CBD parking, live" />
+    <meta property="og:description" content="Real-time on-street parking bay availability powered by City of Melbourne open data." />
+    <meta property="og:url" content="https://nnavnita.com/kerby/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Kerby — Melbourne CBD parking, live" />
+    <meta name="twitter:description" content="Real-time on-street parking bay availability powered by City of Melbourne open data." />
+
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+
+    <style>
+      :root {
+        --bg: #faf8f8;
+        --panel: #ffffff;
+        --fg: #1a1a1a;
+        --muted: #6b6b6b;
+        --rule: #ececec;
+        --link: #1f3a52;
+        --accent: #284b63;
+        --chip-bg: #f0eeee;
+        --chip-fg: #4a4a4a;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+        --pill-green: #2e7d32;
+        --pill-red: #c62828;
+        --pill-grey: #8a8a8a;
+        --pill-gold: #f9a825;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f0f11;
+          --panel: #17171a;
+          --fg: #ececef;
+          --muted: #9a9a9f;
+          --rule: #26262a;
+          --link: #a9c5db;
+          --accent: #a9c5db;
+          --chip-bg: #22222a;
+          --chip-fg: #c9c9d0;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      html { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+      @supports (font-variation-settings: normal) {
+        html { font-family: 'Inter var', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.55;
+        font-size: 16px;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 48px 24px 96px;
+      }
+      header { margin-bottom: 40px; }
+      h1 {
+        font-size: 40px;
+        font-weight: 700;
+        margin: 0 0 8px;
+        letter-spacing: -0.02em;
+      }
+      .tagline {
+        font-size: 18px;
+        color: var(--muted);
+        margin: 0;
+      }
+      section { margin-top: 40px; }
+      h2 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0 0 12px;
+        letter-spacing: -0.01em;
+      }
+      p { margin: 0 0 12px; }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      ul { padding-left: 20px; margin: 0 0 12px; }
+      li { margin-bottom: 6px; }
+
+      .pill {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        background: var(--chip-bg);
+        color: var(--chip-fg);
+        font-size: 12px;
+        font-weight: 500;
+        margin-right: 6px;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0 4px;
+      }
+      .legend .dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--chip-bg);
+        color: var(--chip-fg);
+        font-size: 13px;
+      }
+      .cta {
+        display: inline-block;
+        padding: 12px 20px;
+        background: var(--accent);
+        color: var(--bg);
+        border-radius: 8px;
+        font-weight: 600;
+        margin-top: 8px;
+      }
+      .cta:hover { text-decoration: none; opacity: 0.9; }
+      footer {
+        margin-top: 64px;
+        padding-top: 24px;
+        border-top: 1px solid var(--rule);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      footer a { color: var(--muted); }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: var(--chip-bg);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Kerby</h1>
+        <p class="tagline">Find available street parking in Melbourne CBD, live.</p>
+      </header>
+
+      <section>
+        <p>
+          Kerby pulls real-time occupancy data from City of Melbourne's in-ground parking
+          sensors and shows you which on-street bays are free, right now, near where you're
+          driving to.
+        </p>
+        <div class="legend">
+          <span><span class="dot" style="background:#2e7d32"></span>free</span>
+          <span><span class="dot" style="background:#c62828"></span>taken</span>
+          <span><span class="dot" style="background:#f9a825"></span>your lock</span>
+          <span><span class="dot" style="background:#7b1fa2"></span>locked by other</span>
+          <span><span class="dot" style="background:#8a8a8a"></span>no fresh sensor</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>What it does</h2>
+        <ul>
+          <li><strong>Live availability map</strong> — 3,000+ CBD parking bays, sensor-backed occupancy status.</li>
+          <li><strong>Filter to available-only</strong> — hide everything except fresh, unoccupied bays.</li>
+          <li><strong>Lock a bay</strong> — reserve a spot in the app for 15 minutes while you drive. If someone real takes it, Kerby pings you and offers the next-best nearby bay.</li>
+          <li><strong>Off-street lots too</strong> — 2,600+ commercial and private off-street car parks.</li>
+          <li><strong>Save your parked spot</strong> — "I parked here" pins your GPS. Later, "Walk back to car" gives you a compass + distance.</li>
+          <li><strong>Saved destinations</strong> — tag Work, Home, gym; one-tap search parking near them.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>What it isn't</h2>
+        <ul>
+          <li>Not a parking reservation. Locks are inside Kerby only, not with the City.</li>
+          <li>Not a substitute for reading the sign. Time-restrictions, permit zones and clearways still apply.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Beta</h2>
+        <p>
+          Testing now with a small group in Melbourne. Want in? Email
+          <a href="mailto:kerby@nnavnita.com?subject=Kerby%20beta">kerby@nnavnita.com</a>
+          with the phones you'd install it on (iOS / Android).
+        </p>
+        <a class="cta" href="mailto:kerby@nnavnita.com?subject=Kerby%20beta">Join the beta</a>
+      </section>
+
+      <section>
+        <h2>Data &amp; source</h2>
+        <p>
+          Kerby uses
+          <a href="https://data.melbourne.vic.gov.au">City of Melbourne Open Data</a>
+          (CC-BY 4.0) — on-street parking bays, in-ground sensor readings, and off-street
+          car parks. Data refreshes about once a minute; some sensors are decommissioned
+          and are marked "stale" in the app.
+        </p>
+        <p>
+          Backend in Rust (Axum + Postgres/PostGIS + Redis). Mobile in React Native
+          (Expo). Full source at
+          <a href="https://github.com/nnavnita/kerby">github.com/nnavnita/kerby</a>.
+        </p>
+      </section>
+
+      <footer>
+        <p>
+          <a href="https://kerby-api.fly.dev/legal/terms">Terms</a>
+          ·
+          <a href="https://kerby-api.fly.dev/legal/privacy">Privacy</a>
+          ·
+          <a href="https://nnavnita.com">nnavnita.com</a>
+        </p>
+        <p>Data © City of Melbourne, licensed under CC-BY 4.0.</p>
+      </footer>
+    </main>
+  </body>
+</html>
