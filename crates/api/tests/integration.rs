@@ -21,6 +21,11 @@ async fn spawn_test_server() -> String {
         .unwrap_or_else(|_| DEFAULT_REDIS.into());
 
     let db = sqlx::PgPool::connect(&db_url).await.expect("connect db");
+    sqlx::migrate!("../../migrations")
+        .run(&db)
+        .await
+        .expect("run migrations");
+    seed_test_bay(&db).await;
     let redis_client = redis::Client::open(redis_url).expect("redis client");
 
     let (events_tx, _) = tokio::sync::broadcast::channel::<live::SensorEvent>(64);
@@ -50,6 +55,21 @@ async fn spawn_test_server() -> String {
 
 fn unique_email() -> String {
     format!("test-{}@example.com", uuid::Uuid::new_v4())
+}
+
+/// Insert a well-known bay at Melbourne CBD centre so tests that need one
+/// (e.g. lock_create_release_flow) don't depend on the ETL having run.
+async fn seed_test_bay(pool: &sqlx::PgPool) {
+    sqlx::query(
+        r#"
+        INSERT INTO bays (id, centroid, road_segment_id, street_name)
+        VALUES ('TEST_BAY_1', ST_MakePoint(144.9633, -37.8140)::geography, 99999, 'Test Street CBD')
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await
+    .expect("seed test bay");
 }
 
 async fn signup(base: &str, email: &str) -> String {
