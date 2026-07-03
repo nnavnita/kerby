@@ -7,6 +7,7 @@ import { LoginScreen } from './src/screens/LoginScreen';
 import { MapScreen } from './src/screens/MapScreen';
 import { WalkBackScreen } from './src/screens/WalkBackScreen';
 import { SessionDto, api } from './src/api';
+import { registerForPush } from './src/push';
 import { storage } from './src/storage';
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
       if (stored) {
         setToken(stored);
         await refreshSession(stored);
+        registerForPush(stored).catch(() => {});
       }
       setBootstrapped(true);
     })();
@@ -54,6 +56,7 @@ export default function App() {
             onSignedIn={async (t) => {
               setToken(t);
               await refreshSession(t);
+              registerForPush(t).catch(() => {});
             }}
           />
         ) : session ? (

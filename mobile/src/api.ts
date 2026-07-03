@@ -116,19 +116,22 @@ export const api = {
     request<AuthResponse>('/auth/signup', { method: 'POST', body: { email, password } }),
   login: (email: string, password: string) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: { email, password } }),
-  baysNear: (opts: {
-    lat: number;
-    lng: number;
-    radius_m: number;
-    available_only: boolean;
-  }) => {
+  baysNear: (
+    opts: {
+      lat: number;
+      lng: number;
+      radius_m: number;
+      available_only: boolean;
+    },
+    token?: string,
+  ) => {
     const qs = new URLSearchParams({
       lat: String(opts.lat),
       lng: String(opts.lng),
       radius_m: String(opts.radius_m),
       available_only: String(opts.available_only),
     });
-    return request<NearResponse>(`/bays/near?${qs.toString()}`);
+    return request<NearResponse>(`/bays/near?${qs.toString()}`, { token });
   },
   createSession: (
     token: string,

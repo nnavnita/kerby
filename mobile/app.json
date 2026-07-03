@@ -49,7 +49,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow Kerby to use your location."
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "extra": {
       "apiBase": "http://192.168.4.30:8080"
