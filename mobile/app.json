@@ -54,7 +54,7 @@
     ],
     "extra": {
       "apiBase": "http://192.168.4.30:8080",
-      "mapboxToken": ""
+      "locationiqToken": ""
     }
   }
 }

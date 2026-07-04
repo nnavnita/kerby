@@ -204,40 +204,44 @@ export type GeocodeResult = {
   lng: number;
 };
 
-const MAPBOX_TOKEN: string | undefined = (Constants.expoConfig?.extra as any)
-  ?.mapboxToken;
+const LOCATIONIQ_TOKEN: string | undefined = (Constants.expoConfig?.extra as any)
+  ?.locationiqToken;
 
-/// Geocode a free-text query. If a Mapbox token is configured, use Mapbox
-/// (best-in-class AU address coverage, 100k/mo free). Otherwise fall back to
-/// Photon (OSM-based, no key, sparser house-number coverage in Melbourne).
+/// Geocode a free-text query. If a LocationIQ token is configured, use its
+/// autocomplete endpoint (great AU address coverage, 5k requests/day free,
+/// no card required). Otherwise fall back to Photon (OSM-based, no key,
+/// sparser house-number coverage in Melbourne).
 export async function geocode(query: string): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
-  if (MAPBOX_TOKEN) return geocodeMapbox(trimmed);
+  if (LOCATIONIQ_TOKEN) return geocodeLocationIQ(trimmed);
   return geocodePhoton(trimmed);
 }
 
-async function geocodeMapbox(q: string): Promise<GeocodeResult[]> {
+async function geocodeLocationIQ(q: string): Promise<GeocodeResult[]> {
   const qs = new URLSearchParams({
-    access_token: MAPBOX_TOKEN!,
+    key: LOCATIONIQ_TOKEN!,
+    q,
     limit: '8',
-    country: 'au',
-    proximity: '144.963,-37.814',
-    types: 'address,poi,place,neighborhood',
+    countrycodes: 'au',
+    format: 'json',
+    // Bias to Melbourne but don't hard-restrict.
+    viewbox: '144.85,-37.75,145.05,-37.90',
+    bounded: '0',
+    dedupe: '1',
+    addressdetails: '1',
   });
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?${qs}`;
-  const resp = await fetch(url);
+  const resp = await fetch(`https://api.locationiq.com/v1/autocomplete?${qs}`);
   if (!resp.ok) throw new Error(`geocode ${resp.status}`);
-  const raw = (await resp.json()) as {
-    features?: Array<{
-      place_name: string;
-      center: [number, number];
-    }>;
-  };
-  return (raw.features ?? []).map((f) => ({
-    label: f.place_name,
-    lat: f.center[1],
-    lng: f.center[0],
+  const raw = (await resp.json()) as Array<{
+    display_name: string;
+    lat: string;
+    lon: string;
+  }>;
+  return raw.map((r) => ({
+    label: r.display_name,
+    lat: parseFloat(r.lat),
+    lng: parseFloat(r.lon),
   }));
 }
 
