@@ -60,6 +60,7 @@ module.exports = () => ({
     ],
     extra: {
       apiBase: process.env.KERBY_API_BASE ?? 'http://localhost:8080',
+      googleMapsKey: process.env.GOOGLE_MAPS_KEY ?? '',
       locationiqToken: process.env.LOCATIONIQ_TOKEN ?? '',
     },
   },
