@@ -60,7 +60,8 @@ module.exports = () => ({
     ],
     extra: {
       apiBase: process.env.KERBY_API_BASE ?? 'http://localhost:8080',
-      googleMapsKey: process.env.GOOGLE_MAPS_KEY ?? '',
+      // LocationIQ token is only used as a fallback when the backend proxy
+      // fails or has no Google key configured.
       locationiqToken: process.env.LOCATIONIQ_TOKEN ?? '',
     },
   },

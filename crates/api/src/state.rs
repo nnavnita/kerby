@@ -10,4 +10,6 @@ pub struct AppState {
     pub jwt_secret: Arc<String>,
     pub jwt_ttl_secs: i64,
     pub events: broadcast::Sender<SensorEvent>,
+    pub http: reqwest::Client,
+    pub google_maps_key: Option<Arc<String>>,
 }

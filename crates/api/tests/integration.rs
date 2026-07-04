@@ -36,6 +36,8 @@ async fn spawn_test_server() -> String {
         jwt_secret: Arc::new("integration-test-secret".to_string()),
         jwt_ttl_secs: 3600,
         events: events_tx,
+        http: reqwest::Client::new(),
+        google_maps_key: None,
     };
 
     let app = build_router(state, false);
@@ -312,6 +314,34 @@ async fn destination_crud() {
         .await
         .unwrap();
     assert_eq!(del.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn geocode_returns_empty_for_short_query() {
+    let base = spawn_test_server().await;
+    // Query shorter than MIN_QUERY_LEN should return zero results without
+    // touching the upstream (safe even when GOOGLE_MAPS_KEY is unset).
+    let resp = reqwest::get(format!("{}/geocode?q=ab", base))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["results"].as_array().unwrap().len(), 0);
+    assert_eq!(body["cached"].as_bool(), Some(false));
+}
+
+#[tokio::test]
+async fn geocode_reports_missing_key() {
+    // Test server is constructed with google_maps_key = None. A real query
+    // should surface as 500 (the specific reason is redacted in the client
+    // response for safety; it's logged server-side).
+    let base = spawn_test_server().await;
+    let resp = reqwest::get(format!("{}/geocode?q=Federation+Square", base))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body.get("error").is_some(), "expected error field");
 }
 
 #[tokio::test]

@@ -31,12 +31,27 @@ async fn main() -> anyhow::Result<()> {
     let (events_tx, _) = tokio::sync::broadcast::channel::<live::SensorEvent>(1024);
     live::spawn_redis_bridge(redis_client.clone(), events_tx.clone()).await;
 
+    let google_maps_key = std::env::var("GOOGLE_MAPS_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(Arc::new);
+    if google_maps_key.is_none() {
+        tracing::warn!("GOOGLE_MAPS_KEY not set; /geocode will return errors");
+    }
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent(concat!("kerby-api/", env!("CARGO_PKG_VERSION")))
+        .build()?;
+
     let state = AppState {
         db,
         redis: redis_client,
         jwt_secret: Arc::new(jwt_secret),
         jwt_ttl_secs,
         events: events_tx,
+        http,
+        google_maps_key,
     };
 
     let app = build_router(state, true);

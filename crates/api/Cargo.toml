@@ -40,3 +40,4 @@ jsonwebtoken.workspace = true
 async-trait.workspace = true
 futures-util.workspace = true
 tower_governor.workspace = true
+reqwest.workspace = true

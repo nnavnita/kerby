@@ -204,54 +204,30 @@ export type GeocodeResult = {
   lng: number;
 };
 
-const GOOGLE_MAPS_KEY: string | undefined = (Constants.expoConfig?.extra as any)
-  ?.googleMapsKey;
 const LOCATIONIQ_TOKEN: string | undefined = (Constants.expoConfig?.extra as any)
   ?.locationiqToken;
 
-/// Geocode a free-text query. Provider priority:
-///   1. Google Geocoding API — house-level precision anywhere. Needs billing
-///      account + card; free within $200/mo credit. Set GOOGLE_MAPS_KEY.
-///   2. LocationIQ autocomplete — OSM-based, 5k/day free, no card. But OSM
-///      is missing many Melbourne CBD house numbers.
-///   3. Photon (public) — no key, weakest recall.
+/// Geocode a free-text query. Primary path proxies through the Kerby backend
+/// (which holds the Google API key, caches results, and rate-limits abuse).
+/// Falls back to LocationIQ then Photon if the backend has no key configured
+/// or the request fails.
 export async function geocode(query: string): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
-  if (GOOGLE_MAPS_KEY) return geocodeGoogle(trimmed);
-  if (LOCATIONIQ_TOKEN) return geocodeLocationIQ(trimmed);
-  return geocodePhoton(trimmed);
+  try {
+    return await geocodeBackend(trimmed);
+  } catch (e) {
+    if (LOCATIONIQ_TOKEN) return geocodeLocationIQ(trimmed);
+    return geocodePhoton(trimmed);
+  }
 }
 
-async function geocodeGoogle(q: string): Promise<GeocodeResult[]> {
-  const qs = new URLSearchParams({
-    key: GOOGLE_MAPS_KEY!,
-    address: q,
-    region: 'au',
-    // Bias to Greater Melbourne; results outside can still return but are
-    // ranked lower.
-    bounds: '-38.05,144.60|-37.55,145.30',
-  });
-  const resp = await fetch(
-    `https://maps.googleapis.com/maps/api/geocode/json?${qs}`,
-  );
+async function geocodeBackend(q: string): Promise<GeocodeResult[]> {
+  const qs = new URLSearchParams({ q });
+  const resp = await fetch(`${API_BASE}/geocode?${qs}`);
   if (!resp.ok) throw new Error(`geocode ${resp.status}`);
-  const raw = (await resp.json()) as {
-    status: string;
-    error_message?: string;
-    results?: Array<{
-      formatted_address: string;
-      geometry: { location: { lat: number; lng: number } };
-    }>;
-  };
-  if (raw.status !== 'OK' && raw.status !== 'ZERO_RESULTS') {
-    throw new Error(`google ${raw.status}: ${raw.error_message ?? ''}`);
-  }
-  return (raw.results ?? []).slice(0, 8).map((r) => ({
-    label: r.formatted_address,
-    lat: r.geometry.location.lat,
-    lng: r.geometry.location.lng,
-  }));
+  const raw = (await resp.json()) as { results: GeocodeResult[] };
+  return raw.results;
 }
 
 async function geocodeLocationIQ(q: string): Promise<GeocodeResult[]> {
