@@ -216,8 +216,6 @@ export async function geocode(query: string): Promise<GeocodeResult[]> {
     lang: 'en',
     lat: '-37.814',
     lon: '144.963',
-    // Restrict to Australia.
-    'osm_tag': 'place,highway,building,amenity',
   });
   const resp = await fetch(`https://photon.komoot.io/api/?${qs}`, {
     headers: { 'User-Agent': 'kerby-mobile/0.1 (kerby@nnavnita.com)' },
