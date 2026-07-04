@@ -204,14 +204,46 @@ export type GeocodeResult = {
   lng: number;
 };
 
-/// Geocode via Photon (Komoot's OSM search — better house-number recall than
-/// Nominatim's default endpoint). Biased to Melbourne CBD but not bounded so
-/// distant Greater Melbourne results still land if the user types them.
+const MAPBOX_TOKEN: string | undefined = (Constants.expoConfig?.extra as any)
+  ?.mapboxToken;
+
+/// Geocode a free-text query. If a Mapbox token is configured, use Mapbox
+/// (best-in-class AU address coverage, 100k/mo free). Otherwise fall back to
+/// Photon (OSM-based, no key, sparser house-number coverage in Melbourne).
 export async function geocode(query: string): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
+  if (MAPBOX_TOKEN) return geocodeMapbox(trimmed);
+  return geocodePhoton(trimmed);
+}
+
+async function geocodeMapbox(q: string): Promise<GeocodeResult[]> {
   const qs = new URLSearchParams({
-    q: trimmed,
+    access_token: MAPBOX_TOKEN!,
+    limit: '8',
+    country: 'au',
+    proximity: '144.963,-37.814',
+    types: 'address,poi,place,neighborhood',
+  });
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?${qs}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`geocode ${resp.status}`);
+  const raw = (await resp.json()) as {
+    features?: Array<{
+      place_name: string;
+      center: [number, number];
+    }>;
+  };
+  return (raw.features ?? []).map((f) => ({
+    label: f.place_name,
+    lat: f.center[1],
+    lng: f.center[0],
+  }));
+}
+
+async function geocodePhoton(q: string): Promise<GeocodeResult[]> {
+  const qs = new URLSearchParams({
+    q,
     limit: '8',
     lang: 'en',
     lat: '-37.814',
@@ -231,11 +263,10 @@ export async function geocode(query: string): Promise<GeocodeResult[]> {
         city?: string;
         state?: string;
         country?: string;
-        postcode?: string;
       };
     }>;
   };
-  const rows = (raw.features ?? [])
+  return (raw.features ?? [])
     .filter((f) => f.properties?.country === 'Australia')
     .map((f) => {
       const [lng, lat] = f.geometry.coordinates;
@@ -252,7 +283,6 @@ export async function geocode(query: string): Promise<GeocodeResult[]> {
         lng,
       };
     });
-  return rows;
 }
 
 export { API_BASE };

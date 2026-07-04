@@ -53,7 +53,8 @@
       "expo-notifications"
     ],
     "extra": {
-      "apiBase": "http://192.168.4.30:8080"
+      "apiBase": "http://192.168.4.30:8080",
+      "mapboxToken": ""
     }
   }
 }
