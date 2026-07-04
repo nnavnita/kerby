@@ -204,31 +204,57 @@ export type GeocodeResult = {
   lng: number;
 };
 
+/// Geocode via Photon (Komoot's OSM search — better house-number recall than
+/// Nominatim's default endpoint). Biased to Melbourne CBD but not bounded so
+/// distant Greater Melbourne results still land if the user types them.
 export async function geocode(query: string): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
   const qs = new URLSearchParams({
     q: trimmed,
-    format: 'json',
-    limit: '5',
-    countrycodes: 'au',
-    viewbox: '144.90,-37.75,145.02,-37.85', // Melbourne CBD-ish bbox
-    bounded: '1',
+    limit: '8',
+    lang: 'en',
+    lat: '-37.814',
+    lon: '144.963',
+    // Restrict to Australia.
+    'osm_tag': 'place,highway,building,amenity',
   });
-  const resp = await fetch(`https://nominatim.openstreetmap.org/search?${qs}`, {
+  const resp = await fetch(`https://photon.komoot.io/api/?${qs}`, {
     headers: { 'User-Agent': 'kerby-mobile/0.1 (kerby@nnavnita.com)' },
   });
   if (!resp.ok) throw new Error(`geocode ${resp.status}`);
-  const rows = (await resp.json()) as Array<{
-    display_name: string;
-    lat: string;
-    lon: string;
-  }>;
-  return rows.map((r) => ({
-    label: r.display_name,
-    lat: parseFloat(r.lat),
-    lng: parseFloat(r.lon),
-  }));
+  const raw = (await resp.json()) as {
+    features?: Array<{
+      geometry: { coordinates: [number, number] };
+      properties: {
+        name?: string;
+        housenumber?: string;
+        street?: string;
+        city?: string;
+        state?: string;
+        country?: string;
+        postcode?: string;
+      };
+    }>;
+  };
+  const rows = (raw.features ?? [])
+    .filter((f) => f.properties?.country === 'Australia')
+    .map((f) => {
+      const [lng, lat] = f.geometry.coordinates;
+      const p = f.properties;
+      const parts = [
+        [p.housenumber, p.street].filter(Boolean).join(' '),
+        p.name && p.name !== p.street ? p.name : '',
+        p.city,
+        p.state,
+      ].filter(Boolean);
+      return {
+        label: parts.join(', ') || p.name || 'Unknown place',
+        lat,
+        lng,
+      };
+    });
+  return rows;
 }
 
 export { API_BASE };

@@ -666,11 +666,6 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
               ))}
             </View>
 
-            <Text style={styles.disabledFilter}>
-              Restriction type + bay shape filters coming soon — CoM data doesn't
-              expose them yet (see project README).
-            </Text>
-
             <Pressable
               style={styles.parkBtn}
               onPress={() => setFilterModalOpen(false)}
@@ -940,12 +935,6 @@ const styles = StyleSheet.create({
   pillActive: { backgroundColor: '#1E88E5' },
   pillText: { fontWeight: '600', color: '#333' },
   pillTextActive: { color: '#fff' },
-  disabledFilter: {
-    marginTop: 16,
-    fontSize: 12,
-    opacity: 0.6,
-    fontStyle: 'italic',
-  },
   destRow: {
     flexDirection: 'row',
     alignItems: 'center',
