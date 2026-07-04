@@ -39,9 +39,13 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("GOOGLE_MAPS_KEY not set; /geocode will return errors");
     }
 
+    // Force outbound over IPv4 so upstream IP allowlists (e.g. the Google
+    // Maps key restriction) see the same address the operator whitelisted.
+    // Dual-stack hosts otherwise randomly egress over IPv6.
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .user_agent(concat!("kerby-api/", env!("CARGO_PKG_VERSION")))
+        .local_address(Some(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)))
         .build()?;
 
     let state = AppState {
