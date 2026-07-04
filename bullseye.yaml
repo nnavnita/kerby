@@ -408,3 +408,109 @@ targets:
     origin: manual
     discovered: 2026-07-02
     achieved: 2026-07-02
+  T5:
+    name: In-app turn-by-turn nav + CarPlay/Android Auto (Mapbox SDK, bare workflow)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - User navigating a route from Kerby stays inside Kerby the whole drive — no app switching to Google Maps or Apple Maps.
+    - Turn-by-turn voice + banners powered by Mapbox Navigation SDK v3.
+    - 'CarPlay: Kerby renders route + status on the head unit via CarPlay Navigation entitlement. Apple approval obtained.'
+    - 'Android Auto: Kerby renders route + status via Auto driving-app template.'
+    - 'Lock-taken reroute: WebSocket event triggers Mapbox to reroute to the next-best available bay without user tapping anything, with a spoken ''bay taken, rerouting'' cue.'
+    - Ejected from Expo managed to bare RN + EAS build pipeline. Expo Go dev is replaced by dev-client build.
+    context: Supersedes T3.4 (which naively lumped 'CarPlay support' onto managed Expo). Real answer needs a turn-by-turn engine (Mapbox Nav SDK) and a bare workflow to install its native modules. Cost at beta scale ~$0/mo (Mapbox free tier 100k nav sessions/mo + 25k map loads/mo). Apple CarPlay entitlement is case-by-case; apply after Phase 1 beta proves traction — approval slow (weeks-months) without user data.
+    tags:
+    - phase-4
+    - nav
+    - carplay
+    origin: manual
+    discovered: 2026-07-04
+  T5.1:
+    name: Eject to Expo bare workflow (prebuild + dev-client)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - '`npx expo prebuild` generates ios/ and android/ projects committed to repo.'
+    - '`eas build --profile development` produces a dev-client APK/IPA for physical devices.'
+    - Metro bundler + JS reload still work in dev-client (parity with old Expo Go workflow).
+    - CI updated to run pod install + gradle assemble smoke tests.
+    depends_on:
+    - T5
+    tags:
+    - phase-4
+    - build
+    origin: manual
+    discovered: 2026-07-04
+  T5.2:
+    name: Mapbox Navigation SDK v3 wired for phone-only turn-by-turn
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Mapbox access token stored as secret; Kerby uses Mapbox map tiles + Directions + Navigation SDK.
+    - Tap Navigate on a bay -> Mapbox nav view takes over with voice + banners.
+    - Route recomputed when user takes a wrong turn.
+    - Arrival detection triggers 'I parked here' flow automatically.
+    depends_on:
+    - T5.1
+    tags:
+    - phase-4
+    - nav
+    origin: manual
+    discovered: 2026-07-04
+  T5.3:
+    name: Live lock-taken reroute wired into Mapbox nav (no user tap needed)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - When the WS /live event says the locked bay is now 'present', Mapbox nav reroutes to the next-best matching bay automatically.
+    - Voice cue 'bay taken, rerouting' announces the switch.
+    - Old lock released; new bay locked in one atomic backend call to avoid a moment of holding two locks.
+    depends_on:
+    - T5.2
+    tags:
+    - phase-4
+    - nav
+    - backend
+    origin: manual
+    discovered: 2026-07-04
+  T5.4:
+    name: Android Auto driving template shipped
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Kerby renders map + turn-by-turn on Android Auto head unit via androidx.car.app driving template.
+    - Voice cues route through the Auto session.
+    - Reroute events reflected on Auto UI in <1s.
+    depends_on:
+    - T5.2
+    tags:
+    - phase-4
+    - carplay
+    - android
+    origin: manual
+    discovered: 2026-07-04
+  T5.5:
+    name: Apple CarPlay Navigation entitlement approved + shipped
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - '`com.apple.developer.carplay-navigation` entitlement granted by Apple.'
+    - Kerby renders on CarPlay head unit via Mapbox CarPlay templates.
+    - Passes Apple's CarPlay usability review (no small tap targets, no distracting animations, etc).
+    - TestFlight beta with 20+ CarPlay-user sessions before public submission.
+    context: Apple approval is case-by-case and requires evidence the app is genuinely a navigation product (not a bolted-on feature). Apply after T5.2 works on phone AND Phase 1 beta shows real weekly-active drivers.
+    depends_on:
+    - T5.2
+    tags:
+    - phase-4
+    - carplay
+    - external-gate
+    origin: manual
+    discovered: 2026-07-04
