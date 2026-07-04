@@ -15,7 +15,15 @@ import {
 } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { API_BASE, Bay, Destination, Lot, api, openLiveStream } from '../api';
+import {
+  Bay,
+  Destination,
+  GeocodeResult,
+  Lot,
+  api,
+  geocode,
+  openLiveStream,
+} from '../api';
 import { storage } from '../storage';
 
 const MELBOURNE_CBD: Region = {
@@ -27,30 +35,65 @@ const MELBOURNE_CBD: Region = {
 
 const REFRESH_MS = 15_000;
 
+type Filters = {
+  availableOnly: boolean;
+  maxWalkM: number;
+  includeNoSensor: boolean;
+  includeLots: boolean;
+};
+
+const DEFAULT_FILTERS: Filters = {
+  availableOnly: true,
+  maxWalkM: 400,
+  includeNoSensor: false,
+  includeLots: false,
+};
+
 type Props = {
   token: string;
   onSignedOut: () => void;
   onSessionSaved: () => void;
 };
 
+type Target = {
+  label: string;
+  lat: number;
+  lng: number;
+};
+
 export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
   const mapRef = useRef<MapView>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [region, setRegion] = useState<Region>(MELBOURNE_CBD);
+  const [target, setTarget] = useState<Target | null>(null);
   const [bays, setBays] = useState<Bay[]>([]);
   const [lots, setLots] = useState<Lot[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loading, setLoading] = useState(false);
-  const [availableOnly, setAvailableOnly] = useState(true);
-  const [showLots, setShowLots] = useState(false);
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [selected, setSelected] = useState<Bay | null>(null);
   const [selectedLot, setSelectedLot] = useState<Lot | null>(null);
   const [destModalOpen, setDestModalOpen] = useState(false);
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [newDestName, setNewDestName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const activeLockBayId = useMemo(
     () => bays.find((b) => b.lock?.mine)?.id ?? null,
     [bays],
+  );
+
+  // Centre of the search — destination if set, otherwise map centre.
+  const searchCentre = useMemo(
+    () =>
+      target
+        ? { lat: target.lat, lng: target.lng }
+        : { lat: region.latitude, lng: region.longitude },
+    [target, region.latitude, region.longitude],
   );
 
   const fetchBays = useCallback(async () => {
@@ -58,37 +101,42 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
     try {
       const resp = await api.baysNear(
         {
-          lat: region.latitude,
-          lng: region.longitude,
-          radius_m: 600,
-          available_only: availableOnly,
+          lat: searchCentre.lat,
+          lng: searchCentre.lng,
+          radius_m: Math.max(filters.maxWalkM, 150),
+          available_only: filters.availableOnly,
         },
         token,
       );
-      setBays(resp.bays);
+      // Apply the client-side "hide no-sensor bays" filter — the backend already
+      // enforces available_only and radius.
+      const filtered = filters.includeNoSensor
+        ? resp.bays
+        : resp.bays.filter((b) => b.sensor != null);
+      setBays(filtered);
     } catch (e: any) {
       console.warn('bays fetch failed', e?.message);
     } finally {
       setLoading(false);
     }
-  }, [region.latitude, region.longitude, availableOnly, token]);
+  }, [searchCentre.lat, searchCentre.lng, filters, token]);
 
   const fetchLots = useCallback(async () => {
-    if (!showLots) {
+    if (!filters.includeLots) {
       setLots([]);
       return;
     }
     try {
       const r = await api.lotsNear({
-        lat: region.latitude,
-        lng: region.longitude,
-        radius_m: 800,
+        lat: searchCentre.lat,
+        lng: searchCentre.lng,
+        radius_m: Math.max(filters.maxWalkM * 2, 400),
       });
       setLots(r);
     } catch (e: any) {
       console.warn('lots fetch failed', e?.message);
     }
-  }, [region.latitude, region.longitude, showLots]);
+  }, [searchCentre.lat, searchCentre.lng, filters.maxWalkM, filters.includeLots]);
 
   const refreshDestinations = useCallback(async () => {
     try {
@@ -98,6 +146,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
     }
   }, [token]);
 
+  // First-run: try to centre on the user's current location.
   useEffect(() => {
     (async () => {
       const perm = await Location.requestForegroundPermissionsAsync();
@@ -130,9 +179,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
     return () => clearInterval(t);
   }, [fetchBays, fetchLots]);
 
-  // WS live subscription — active when the user holds a lock. Watches the
-  // locked bay + up to 5 nearest fallbacks so we can suggest a reroute if
-  // the locked bay gets taken by a real car.
+  // WS reroute subscription — active when the user holds a lock.
   useEffect(() => {
     if (!activeLockBayId) {
       wsRef.current?.close();
@@ -149,18 +196,15 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
       try {
         const ev = JSON.parse(msg.data);
         if (ev.bay_id === activeLockBayId && ev.status === 'present') {
-          const nextBay = bays.find(
-            (b) =>
-              b.id !== activeLockBayId &&
-              b.sensor?.fresh &&
-              b.sensor.status === 'unoccupied' &&
-              !b.lock,
+          const nextBay = pickBestBay(
+            bays.filter((b) => b.id !== activeLockBayId),
+            filters,
           );
           Alert.alert(
             'Bay taken',
             nextBay
               ? `Bay ${activeLockBayId} was taken. Lock the next-best bay (${nextBay.id}, ${nextBay.distance_m}m)?`
-              : `Bay ${activeLockBayId} was taken. No fresh unoccupied bay nearby right now.`,
+              : `Bay ${activeLockBayId} was taken. No matching bay nearby right now.`,
             nextBay
               ? [
                   { text: 'Cancel', style: 'cancel' },
@@ -180,13 +224,53 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
           );
         }
       } catch {
-        // ignore malformed frames
+        // ignore
       }
     };
+    return () => ws.close();
+  }, [activeLockBayId, bays, token, fetchBays, filters]);
+
+  const bestBay = useMemo(() => pickBestBay(bays, filters), [bays, filters]);
+
+  const runSearch = useCallback(async (q: string) => {
+    if (q.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      setSearchResults(await geocode(q));
+    } catch (e: any) {
+      console.warn('geocode', e?.message);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => runSearch(searchQuery), 400);
     return () => {
-      ws.close();
+      if (searchDebounce.current) clearTimeout(searchDebounce.current);
     };
-  }, [activeLockBayId, bays, token, fetchBays]);
+  }, [searchQuery, runSearch]);
+
+  const applySearchResult = (r: GeocodeResult) => {
+    const shortLabel = r.label.split(',').slice(0, 2).join(',');
+    setTarget({ label: shortLabel, lat: r.lat, lng: r.lng });
+    setSearchQuery('');
+    setSearchResults([]);
+    const region = {
+      latitude: r.lat,
+      longitude: r.lng,
+      latitudeDelta: 0.006,
+      longitudeDelta: 0.006,
+    };
+    setRegion(region);
+    mapRef.current?.animateToRegion(region, 500);
+  };
+
+  const clearTarget = () => setTarget(null);
 
   const parkHere = async (bay: Bay) => {
     try {
@@ -228,10 +312,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
   };
 
   const navigateTo = (lat: number, lng: number, label: string) => {
-    // Google Maps universal URL works on both iOS + Android and lets user
-    // pick their nav app.
     const gm = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
-    // iOS also honours the Apple Maps scheme.
     const url =
       Platform.OS === 'ios'
         ? `maps://?daddr=${lat},${lng}&q=${encodeURIComponent(label)}`
@@ -244,11 +325,12 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
       Alert.alert('Name required', 'Give this location a name.');
       return;
     }
+    const centre = target ?? { lat: region.latitude, lng: region.longitude };
     try {
       await api.saveDestination(token, {
         name: newDestName.trim(),
-        lat: region.latitude,
-        lng: region.longitude,
+        lat: centre.lat,
+        lng: centre.lng,
       });
       setNewDestName('');
       refreshDestinations();
@@ -258,6 +340,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
   };
 
   const goToDestination = (d: Destination) => {
+    setTarget({ label: d.name, lat: d.lat, lng: d.lng });
     const r = {
       latitude: d.lat,
       longitude: d.lng,
@@ -267,6 +350,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
     setRegion(r);
     mapRef.current?.animateToRegion(r, 500);
     setDestModalOpen(false);
+    setFilters((f) => ({ ...f, maxWalkM: d.walk_radius_m }));
   };
 
   const signOut = async () => {
@@ -294,6 +378,14 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
         showsUserLocation
         showsMyLocationButton
       >
+        {target && (
+          <Marker
+            coordinate={{ latitude: target.lat, longitude: target.lng }}
+            pinColor="#1E88E5"
+            title={target.label}
+            description="Destination"
+          />
+        )}
         {bays.map((b) => (
           <Marker
             key={b.id}
@@ -318,22 +410,50 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
         ))}
       </MapView>
 
+      {/* Search + destination pill */}
       <View style={styles.topBar}>
-        <View style={styles.filterRow}>
-          <View style={styles.filterCard}>
-            <Text style={styles.filterLabel}>Available</Text>
-            <Switch value={availableOnly} onValueChange={setAvailableOnly} />
-          </View>
-          <View style={styles.filterCard}>
-            <Text style={styles.filterLabel}>Lots</Text>
-            <Switch value={showLots} onValueChange={setShowLots} />
-          </View>
+        <View style={styles.searchCard}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Where are you driving to?"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCorrect={false}
+            returnKeyType="search"
+            onSubmitEditing={() => runSearch(searchQuery)}
+          />
+          {searching && <ActivityIndicator size="small" />}
         </View>
+        {target && (
+          <View style={styles.targetPill}>
+            <Text numberOfLines={1} style={styles.targetPillText}>
+              {target.label}
+            </Text>
+            <Pressable onPress={clearTarget}>
+              <Text style={styles.targetPillClear}>✕</Text>
+            </Pressable>
+          </View>
+        )}
+        {searchResults.length > 0 && (
+          <View style={styles.searchDropdown}>
+            {searchResults.map((r, i) => (
+              <Pressable
+                key={`${r.lat}-${r.lng}-${i}`}
+                style={styles.searchResultRow}
+                onPress={() => applySearchResult(r)}
+              >
+                <Text numberOfLines={2} style={styles.searchResultText}>
+                  {r.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
         <View style={styles.actionRow}>
-          <Pressable
-            style={styles.chip}
-            onPress={() => setDestModalOpen(true)}
-          >
+          <Pressable style={styles.chip} onPress={() => setFilterModalOpen(true)}>
+            <Text style={styles.chipText}>Filters</Text>
+          </Pressable>
+          <Pressable style={styles.chip} onPress={() => setDestModalOpen(true)}>
             <Text style={styles.chipText}>Saved</Text>
           </Pressable>
           <Pressable style={styles.chip} onPress={signOut}>
@@ -342,11 +462,44 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
         </View>
       </View>
 
+      {/* Best-bay recommendation card */}
+      {bestBay && (
+        <View style={styles.bestCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bestLabel}>Best bay for {target?.label ?? 'here'}</Text>
+            <Text style={styles.bestTitle}>
+              Bay {bestBay.id} · {bestBay.distance_m}m
+            </Text>
+            {bestBay.street && (
+              <Text style={styles.bestMeta} numberOfLines={1}>
+                {bestBay.street}
+              </Text>
+            )}
+          </View>
+          <View style={styles.bestActions}>
+            {!bestBay.lock?.mine && !bestBay.lock && (
+              <Pressable style={styles.smallBtn} onPress={() => lockBay(bestBay)}>
+                <Text style={styles.smallBtnText}>Lock</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={[styles.smallBtn, styles.smallBtnPrimary]}
+              onPress={() =>
+                navigateTo(bestBay.lat, bestBay.lng, bestBay.street ?? `Bay ${bestBay.id}`)
+              }
+            >
+              <Text style={styles.smallBtnText}>Nav</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <View style={styles.statusBar}>
         {loading && <ActivityIndicator size="small" />}
         <Text style={styles.statusText}>
           {bays.length} bay{bays.length === 1 ? '' : 's'}
-          {showLots ? ` · ${lots.length} lot${lots.length === 1 ? '' : 's'}` : ''}
+          {filters.includeLots ? ` · ${lots.length} lot${lots.length === 1 ? '' : 's'}` : ''}
+          {' · '}within {filters.maxWalkM}m
         </Text>
       </View>
 
@@ -376,7 +529,9 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
                 {selected.lock && (
                   <Text style={styles.cardMeta}>
                     {selected.lock.mine
-                      ? `Locked by you until ${new Date(selected.lock.expires_at).toLocaleTimeString()}`
+                      ? `Locked by you until ${new Date(
+                          selected.lock.expires_at,
+                        ).toLocaleTimeString()}`
                       : 'Locked by another driver'}
                   </Text>
                 )}
@@ -445,6 +600,87 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
         </Pressable>
       </Modal>
 
+      {/* Filters sheet */}
+      <Modal
+        visible={filterModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFilterModalOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setFilterModalOpen(false)}>
+          <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.cardTitle}>Filters</Text>
+
+            <View style={styles.filterRow}>
+              <Text style={styles.filterName}>Available now only</Text>
+              <Switch
+                value={filters.availableOnly}
+                onValueChange={(v) => setFilters((f) => ({ ...f, availableOnly: v }))}
+              />
+            </View>
+            <Text style={styles.filterHint}>
+              Hide bays whose sensor is stale, occupied, or missing.
+            </Text>
+
+            <View style={styles.filterRow}>
+              <Text style={styles.filterName}>Include bays with no sensor</Text>
+              <Switch
+                value={filters.includeNoSensor}
+                onValueChange={(v) => setFilters((f) => ({ ...f, includeNoSensor: v }))}
+              />
+            </View>
+            <Text style={styles.filterHint}>
+              Off if you want live-availability guarantees.
+            </Text>
+
+            <View style={styles.filterRow}>
+              <Text style={styles.filterName}>Include off-street lots</Text>
+              <Switch
+                value={filters.includeLots}
+                onValueChange={(v) => setFilters((f) => ({ ...f, includeLots: v }))}
+              />
+            </View>
+
+            <Text style={[styles.filterName, { marginTop: 16 }]}>
+              Max walk distance: {filters.maxWalkM} m
+            </Text>
+            <View style={styles.chipRow}>
+              {[150, 250, 400, 600, 1000].map((d) => (
+                <Pressable
+                  key={d}
+                  style={[
+                    styles.pill,
+                    filters.maxWalkM === d && styles.pillActive,
+                  ]}
+                  onPress={() => setFilters((f) => ({ ...f, maxWalkM: d }))}
+                >
+                  <Text
+                    style={[
+                      styles.pillText,
+                      filters.maxWalkM === d && styles.pillTextActive,
+                    ]}
+                  >
+                    {d}m
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.disabledFilter}>
+              Restriction type + bay shape filters coming soon — CoM data doesn't
+              expose them yet (see project README).
+            </Text>
+
+            <Pressable
+              style={styles.parkBtn}
+              onPress={() => setFilterModalOpen(false)}
+            >
+              <Text style={styles.parkBtnText}>Done</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Saved destinations sheet */}
       <Modal
         visible={destModalOpen}
@@ -463,10 +699,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
               }
               renderItem={({ item }) => (
                 <View style={styles.destRow}>
-                  <Pressable
-                    style={{ flex: 1 }}
-                    onPress={() => goToDestination(item)}
-                  >
+                  <Pressable style={{ flex: 1 }} onPress={() => goToDestination(item)}>
                     <Text style={styles.destName}>{item.name}</Text>
                     <Text style={styles.destMeta}>
                       {item.lat.toFixed(4)}, {item.lng.toFixed(4)} · {item.walk_radius_m}m
@@ -492,7 +725,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
             <View style={styles.destAddRow}>
               <TextInput
                 style={styles.destInput}
-                placeholder="Save current map centre as…"
+                placeholder="Save current spot as…"
                 value={newDestName}
                 onChangeText={setNewDestName}
               />
@@ -505,6 +738,23 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
       </Modal>
     </View>
   );
+}
+
+function pickBestBay(bays: Bay[], filters: Filters): Bay | null {
+  const eligible = bays.filter((b) => {
+    if (b.distance_m > filters.maxWalkM) return false;
+    if (b.lock && !b.lock.mine) return false;
+    if (filters.availableOnly) {
+      if (!b.sensor) return false;
+      if (!b.sensor.fresh) return false;
+      if (b.sensor.status !== 'unoccupied') return false;
+    } else if (!filters.includeNoSensor && !b.sensor) {
+      return false;
+    }
+    return true;
+  });
+  if (eligible.length === 0) return null;
+  return eligible.slice().sort((a, b) => a.distance_m - b.distance_m)[0];
 }
 
 function formatAge(secs?: number): string {
@@ -524,17 +774,7 @@ const styles = StyleSheet.create({
     right: 12,
     gap: 6,
   },
-  filterRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 6,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  filterCard: {
+  searchCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -547,7 +787,47 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  filterLabel: { fontWeight: '600' },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 6,
+  },
+  searchDropdown: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  searchResultRow: {
+    padding: 12,
+    borderRadius: 8,
+  },
+  searchResultText: { fontSize: 14 },
+  targetPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    maxWidth: '90%',
+    backgroundColor: '#1E88E5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  targetPillText: { color: '#fff', fontWeight: '600', flexShrink: 1 },
+  targetPillClear: { color: '#fff', fontWeight: '700', paddingLeft: 6 },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 6,
+  },
   chip: {
     backgroundColor: '#fff',
     paddingHorizontal: 12,
@@ -559,6 +839,34 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   chipText: { color: '#333', fontWeight: '600' },
+  bestCard: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 78,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+    gap: 8,
+  },
+  bestLabel: { fontSize: 12, opacity: 0.6 },
+  bestTitle: { fontSize: 16, fontWeight: '700' },
+  bestMeta: { fontSize: 12, opacity: 0.7 },
+  bestActions: { flexDirection: 'row', gap: 6 },
+  smallBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#F9A825',
+  },
+  smallBtnPrimary: { backgroundColor: '#1E88E5' },
+  smallBtnText: { color: '#fff', fontWeight: '700' },
   statusBar: {
     position: 'absolute',
     bottom: 24,
@@ -614,6 +922,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   lockBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  filterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  filterName: { fontSize: 15, fontWeight: '600' },
+  filterHint: { fontSize: 12, opacity: 0.6, marginTop: 2 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  pill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#F0F0F0',
+  },
+  pillActive: { backgroundColor: '#1E88E5' },
+  pillText: { fontWeight: '600', color: '#333' },
+  pillTextActive: { color: '#fff' },
+  disabledFilter: {
+    marginTop: 16,
+    fontSize: 12,
+    opacity: 0.6,
+    fontStyle: 'italic',
+  },
   destRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -196,4 +196,39 @@ export function openLiveStream(bayIds: string[]): WebSocket {
   return ws;
 }
 
+/// Geocode a free-text query to a Melbourne-area lat/lng using OSM
+/// Nominatim. Free, no key required, rate-limited to 1 req/s per IP.
+export type GeocodeResult = {
+  label: string;
+  lat: number;
+  lng: number;
+};
+
+export async function geocode(query: string): Promise<GeocodeResult[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 3) return [];
+  const qs = new URLSearchParams({
+    q: trimmed,
+    format: 'json',
+    limit: '5',
+    countrycodes: 'au',
+    viewbox: '144.90,-37.75,145.02,-37.85', // Melbourne CBD-ish bbox
+    bounded: '1',
+  });
+  const resp = await fetch(`https://nominatim.openstreetmap.org/search?${qs}`, {
+    headers: { 'User-Agent': 'kerby-mobile/0.1 (kerby@nnavnita.com)' },
+  });
+  if (!resp.ok) throw new Error(`geocode ${resp.status}`);
+  const rows = (await resp.json()) as Array<{
+    display_name: string;
+    lat: string;
+    lon: string;
+  }>;
+  return rows.map((r) => ({
+    label: r.display_name,
+    lat: parseFloat(r.lat),
+    lng: parseFloat(r.lon),
+  }));
+}
+
 export { API_BASE };
