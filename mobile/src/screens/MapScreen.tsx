@@ -53,6 +53,7 @@ type Props = {
   token: string;
   onSignedOut: () => void;
   onSessionSaved: () => void;
+  onStartNav: (bay: Bay) => void;
 };
 
 type Target = {
@@ -61,7 +62,12 @@ type Target = {
   lng: number;
 };
 
-export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
+export function MapScreen({
+  token,
+  onSignedOut,
+  onSessionSaved,
+  onStartNav,
+}: Props) {
   const mapRef = useRef<MapView>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -311,7 +317,16 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
     }
   };
 
-  const navigateTo = (lat: number, lng: number, label: string) => {
+  /// Start in-app turn-by-turn navigation to a specific bay. Called from
+  /// the bay detail sheet and the best-bay card.
+  const startNav = (bay: Bay) => {
+    setSelected(null);
+    onStartNav(bay);
+  };
+
+  /// Fallback: open Apple/Google Maps for off-street lots (we don't own the
+  /// lot dataset well enough yet to do in-app nav to them).
+  const openExternalMaps = (lat: number, lng: number, label: string) => {
     const gm = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
     const url =
       Platform.OS === 'ios'
@@ -484,9 +499,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
             )}
             <Pressable
               style={[styles.smallBtn, styles.smallBtnPrimary]}
-              onPress={() =>
-                navigateTo(bestBay.lat, bestBay.lng, bestBay.street ?? `Bay ${bestBay.id}`)
-              }
+              onPress={() => startNav(bestBay)}
             >
               <Text style={styles.smallBtnText}>Nav</Text>
             </Pressable>
@@ -538,9 +551,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
 
                 <Pressable
                   style={styles.navBtn}
-                  onPress={() =>
-                    navigateTo(selected.lat, selected.lng, selected.street ?? `Bay ${selected.id}`)
-                  }
+                  onPress={() => startNav(selected)}
                 >
                   <Text style={styles.navBtnText}>Navigate</Text>
                 </Pressable>
@@ -585,7 +596,7 @@ export function MapScreen({ token, onSignedOut, onSessionSaved }: Props) {
                 <Pressable
                   style={styles.navBtn}
                   onPress={() =>
-                    navigateTo(
+                    openExternalMaps(
                       selectedLot.lat,
                       selectedLot.lng,
                       selectedLot.name ?? 'Off-street lot',

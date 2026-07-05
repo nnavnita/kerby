@@ -5,14 +5,16 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { LoginScreen } from './src/screens/LoginScreen';
 import { MapScreen } from './src/screens/MapScreen';
+import { NavigationScreen } from './src/screens/NavigationScreen';
 import { WalkBackScreen } from './src/screens/WalkBackScreen';
-import { SessionDto, api } from './src/api';
+import { Bay, SessionDto, api } from './src/api';
 import { registerForPush } from './src/push';
 import { storage } from './src/storage';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [session, setSession] = useState<SessionDto | null>(null);
+  const [navTarget, setNavTarget] = useState<{ bay: Bay } | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
 
   const refreshSession = useCallback(async (t: string) => {
@@ -20,7 +22,6 @@ export default function App() {
       const s = await api.currentSession(t);
       setSession(s ?? null);
     } catch (e) {
-      // If token is invalid, sign out.
       await storage.clear();
       setToken(null);
       setSession(null);
@@ -65,14 +66,38 @@ export default function App() {
             session={session}
             onReturned={() => setSession(null)}
           />
+        ) : navTarget ? (
+          <NavigationScreen
+            token={token}
+            target={navTarget}
+            onCancel={() => setNavTarget(null)}
+            onArrived={async () => {
+              // Auto-open the "I parked here" flow: create a session at the
+              // bay's coordinates, then close the nav screen. WalkBackScreen
+              // takes over via the session state.
+              try {
+                await api.createSession(token, {
+                  bay_id: navTarget.bay.id,
+                  lat: navTarget.bay.lat,
+                  lng: navTarget.bay.lng,
+                  note: navTarget.bay.street ?? undefined,
+                });
+                await refreshSession(token);
+              } finally {
+                setNavTarget(null);
+              }
+            }}
+          />
         ) : (
           <MapScreen
             token={token}
             onSignedOut={() => {
               setToken(null);
               setSession(null);
+              setNavTarget(null);
             }}
             onSessionSaved={() => refreshSession(token)}
+            onStartNav={(bay) => setNavTarget({ bay })}
           />
         )}
       </SafeAreaView>

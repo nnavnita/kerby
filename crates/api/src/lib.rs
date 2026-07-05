@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod bays;
 pub mod destinations;
+pub mod directions;
 pub mod error;
 pub mod geocode;
 pub mod legal;
@@ -35,7 +36,8 @@ pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
         .merge(bays::routes())
         .merge(lots::routes())
         .merge(share::routes())
-        .merge(geocode::routes());
+        .merge(geocode::routes())
+        .merge(directions::routes());
     let mut auth_gated = Router::new().merge(auth::routes());
 
     if with_rate_limit {

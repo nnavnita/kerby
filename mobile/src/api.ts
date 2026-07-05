@@ -83,6 +83,23 @@ export type Destination = {
   updated_at: string;
 };
 
+export type DirectionsStep = {
+  instruction: string;
+  distance_m: number;
+  duration_s: number;
+  start: { lat: number; lng: number };
+  end: { lat: number; lng: number };
+  maneuver?: string;
+};
+
+export type DirectionsResponse = {
+  polyline: string;
+  distance_m: number;
+  duration_s: number;
+  steps: DirectionsStep[];
+  cached: boolean;
+};
+
 export type Lot = {
   id: string;
   name: string | null;
@@ -185,6 +202,19 @@ export const api = {
       token,
       body: { token: expoToken },
     }),
+
+  getDirections: (opts: {
+    origin: { lat: number; lng: number };
+    destination: { lat: number; lng: number };
+    mode?: 'driving' | 'walking' | 'bicycling' | 'transit';
+  }) => {
+    const qs = new URLSearchParams({
+      origin: `${opts.origin.lat},${opts.origin.lng}`,
+      destination: `${opts.destination.lat},${opts.destination.lng}`,
+      ...(opts.mode ? { mode: opts.mode } : {}),
+    });
+    return request<DirectionsResponse>(`/directions?${qs}`);
+  },
 };
 
 export function openLiveStream(bayIds: string[]): WebSocket {
