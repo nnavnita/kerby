@@ -514,3 +514,237 @@ targets:
     - external-gate
     origin: manual
     discovered: 2026-07-04
+  T6:
+    name: Auth hardening (reset, verify, delete, refresh, multi-device)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Bundle of authentication/user-safety work needed before shipping to public beta. Sub-targets below.
+    tags:
+    - phase-1.6
+    - auth
+    origin: manual
+    discovered: 2026-07-05
+  T6.1:
+    name: Password reset via email token
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - POST /auth/password-reset-request accepts an email and issues a single-use token via email. Response is always 200 so we don't leak account existence.
+    - POST /auth/password-reset accepts token + new password, updates password_hash, invalidates all refresh tokens for the user.
+    - Tokens hashed at rest (Argon2 or SHA-256 of a random 32-byte value), TTL 1h, single-use.
+    - Mobile Login screen has 'Forgot password' link that opens the request flow.
+    depends_on:
+    - T6
+    origin: manual
+    discovered: 2026-07-05
+  T6.2:
+    name: Email verification on signup
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Signup sends a verification link email automatically.
+    - GET /auth/verify-email?token=... marks users.email_verified_at.
+    - POST /auth/verify-email/resend (authed) re-sends the mail.
+    - Mobile shows an unobtrusive banner when the current user isn't verified with a Resend button.
+    depends_on:
+    - T6
+    origin: manual
+    discovered: 2026-07-05
+  T6.3:
+    name: Delete account endpoint (App Store requirement)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - DELETE /users/me (authed) cascades to sessions, locks, destinations, push tokens, refresh tokens, password resets.
+    - Response body confirms the deletion.
+    - Mobile Voice/Settings modal (or new Account modal) exposes 'Delete account' with a confirm sheet.
+    - Privacy Policy already promises this in ~7 days; implementation makes it instant.
+    depends_on:
+    - T6
+    origin: manual
+    discovered: 2026-07-05
+  T6.4:
+    name: 'Refresh tokens: 15-min access + 30-day refresh'
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - JWT access-token TTL shrinks from 30 days to 15 minutes.
+    - New refresh_tokens table (id, user_id, token_hash, expires_at, revoked_at). Refresh tokens random 32 bytes, hashed at rest, 30-day TTL.
+    - 'POST /auth/refresh {refresh_token} rotates: new access + new refresh, old refresh revoked.'
+    - POST /auth/logout {refresh_token} revokes the given token.
+    - Mobile client transparently refreshes on 401. Logout button hits /auth/logout.
+    depends_on:
+    - T6
+    origin: manual
+    discovered: 2026-07-05
+  T6.5:
+    name: Multi-device push tokens
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - 'Migration: users.push_token column split into user_push_tokens (id, user_id, expo_token, last_seen_at) with UNIQUE(user_id, expo_token).'
+    - POST /users/push-token upserts by (user_id, expo_token) and bumps last_seen_at instead of overwriting.
+    - Worker fan-out sends push notifications to every active token for the user.
+    - Stale tokens (>90 days no update) reaped by nightly GC.
+    depends_on:
+    - T6
+    origin: manual
+    discovered: 2026-07-05
+  T7:
+    name: Observability (Sentry, JSON logs, uptime)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Bundle of pre-launch observability. Sub-targets below.
+    tags:
+    - phase-1.6
+    - ops
+    origin: manual
+    discovered: 2026-07-05
+  T7.1:
+    name: Sentry integration on backend
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - '`sentry` crate initialised in kerby-api and kerby-worker when SENTRY_DSN env is set.'
+    - tracing events at ERROR level flow to Sentry via sentry-tracing.
+    - Panics captured with stack traces.
+    - Release version tagged with Cargo package version so we can compare error rates across deploys.
+    depends_on:
+    - T7
+    origin: manual
+    discovered: 2026-07-05
+  T7.2:
+    name: Sentry integration on mobile app
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - '`@sentry/react-native` installed and initialised in App.tsx when SENTRY_DSN is set via env.'
+    - JavaScript exceptions and native crashes captured.
+    - User context (userId only, never email) attached after login.
+    - Release + dist tagged from app.config.js version.
+    depends_on:
+    - T7
+    origin: manual
+    discovered: 2026-07-05
+  T7.3:
+    name: Structured JSON logs on backend
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - 'tracing_subscriber switches to JSON format when LOG_FORMAT=json (default: pretty for local dev).'
+    - Every log line carries request_id + user_id (when authenticated) via TraceLayer + a middleware injection.
+    - Compatible with Fly.io log aggregation and Better Stack / Axiom ingestion.
+    depends_on:
+    - T7
+    origin: manual
+    discovered: 2026-07-05
+  T8:
+    name: Reliability + scale (advisory lock, GC, pool sizing)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Bundle of reliability work needed before scaling past one machine. Sub-targets below.
+    tags:
+    - phase-1.6
+    - reliability
+    origin: manual
+    discovered: 2026-07-05
+  T8.1:
+    name: Postgres advisory locks around ETL jobs
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Both bay + lot ETL wrap their work in a pg_try_advisory_lock. If another worker holds the lock, the run is skipped with a log line, not queued.
+    - Sensor poller does NOT lock (it's idempotent and cheap; letting two run in parallel is harmless).
+    - Sweeper does NOT lock (its UPDATE is idempotent under concurrent runs).
+    depends_on:
+    - T8
+    origin: manual
+    discovered: 2026-07-05
+  T8.2:
+    name: Nightly GC — old locks, sessions, verification/reset tokens, push tokens
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - 'Worker runs a daily GC that deletes: locks with released_at older than 30 days; parked_sessions with returned_at older than 90 days; password_resets past expires_at + 24h; email_verifications past expires_at + 24h; user_push_tokens with last_seen_at older than 90 days.'
+    - Wrapped in advisory lock so multi-instance workers don't step on each other.
+    depends_on:
+    - T8
+    origin: manual
+    discovered: 2026-07-05
+  T8.3:
+    name: Explicit Postgres connection pool sizing
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - PgPoolOptions in both binaries reads MAX_DB_CONNECTIONS env (default 10 api / 5 worker) and MIN_DB_CONNECTIONS (default 1).
+    - Documented in deploy/README.md with recommended values for Supabase free tier vs Pro.
+    depends_on:
+    - T8
+    origin: manual
+    discovered: 2026-07-05
+  T9:
+    name: Compliance + polish (attribution, error boundaries, offline)
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Bundle of ship-blocking legal + UX polish. Sub-targets below.
+    tags:
+    - phase-1.6
+    - polish
+    origin: manual
+    discovered: 2026-07-05
+  T9.1:
+    name: City of Melbourne CC-BY 4.0 attribution
+    status: achieved
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Attribution string 'Parking data © City of Melbourne, licensed under CC-BY 4.0' rendered in app (status bar or About screen), on the share/bay landing page, on nnavnita.com/kerby landing, and in /legal/terms + /legal/privacy footer.
+    depends_on:
+    - T9
+    origin: manual
+    discovered: 2026-07-05
+    achieved: 2026-07-05
+  T9.2:
+    name: Root React error boundary + Sentry reporting
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - 'Custom ErrorBoundary wraps App root. On JS error: shows a fallback UI with ''Reload'' + emails/sends the error to Sentry.'
+    - No JS exception should ever leave the user staring at a white screen.
+    depends_on:
+    - T9
+    origin: manual
+    discovered: 2026-07-05
+  T9.3:
+    name: Offline / no-backend banner
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Use @react-native-community/netinfo to detect no network.
+    - MapScreen shows a persistent 'Offline — data may be stale' bar when net is down.
+    - Failed API calls degrade gracefully (retry with backoff, don't crash).
+    depends_on:
+    - T9
+    origin: manual
+    discovered: 2026-07-05
