@@ -514,11 +514,16 @@ export function MapScreen({
 
       <View style={styles.statusBar}>
         {loading && <ActivityIndicator size="small" />}
-        <Text style={styles.statusText}>
-          {bays.length} bay{bays.length === 1 ? '' : 's'}
-          {filters.includeLots ? ` · ${lots.length} lot${lots.length === 1 ? '' : 's'}` : ''}
-          {' · '}within {filters.maxWalkM}m
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.statusText}>
+            {bays.length} bay{bays.length === 1 ? '' : 's'}
+            {filters.includeLots ? ` · ${lots.length} lot${lots.length === 1 ? '' : 's'}` : ''}
+            {' · '}within {filters.maxWalkM}m
+          </Text>
+          <Text style={styles.attribText}>
+            Data © City of Melbourne, CC-BY 4.0
+          </Text>
+        </View>
       </View>
 
       {/* Bay detail sheet */}
@@ -897,6 +902,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   statusText: { fontSize: 14 },
+  attribText: { fontSize: 10, color: '#888', marginTop: 2 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.25)',

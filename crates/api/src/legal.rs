@@ -35,6 +35,7 @@ fn html(title: &str, body: &str) -> Response {
 {body}
 <hr>
 <p><small>Last updated 2026-07-02. Contact: <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a></small></p>
+<p><small>Parking data © City of Melbourne, licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC-BY 4.0</a>.</small></p>
 </body></html>"#
     );
     ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], full).into_response()

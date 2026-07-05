@@ -63,6 +63,9 @@ async fn bay_landing(State(state): State<AppState>, Path(id): Path<String>) -> A
     <a href="https://apps.apple.com/app/kerby">App Store</a> ·
     <a href="https://play.google.com/store/apps/details?id=app.kerby.mobile">Play Store</a>
   </div>
+  <p class="muted" style="margin-top: 16px; font-size: 12px;">
+    Parking data © City of Melbourne, <a href="https://creativecommons.org/licenses/by/4.0/">CC-BY 4.0</a>.
+  </p>
 </div>
 </body></html>
 "#
