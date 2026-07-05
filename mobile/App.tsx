@@ -10,6 +10,7 @@ import { WalkBackScreen } from './src/screens/WalkBackScreen';
 import { Bay, SessionDto, api } from './src/api';
 import { registerForPush } from './src/push';
 import { storage } from './src/storage';
+import { loadVoicePrefs } from './src/voice';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      await loadVoicePrefs();
       const stored = await storage.getToken();
       if (stored) {
         setToken(stored);

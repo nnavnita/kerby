@@ -10,6 +10,7 @@ import {
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
+import { speak, stopSpeaking } from '../voice';
 import {
   Bay,
   DirectionsResponse,
@@ -122,7 +123,7 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
     })();
     return () => {
       sub?.remove();
-      Speech.stop();
+      stopSpeaking();
     };
   }, [fetchRoute]);
 
@@ -135,7 +136,7 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
       try {
         const ev = JSON.parse(msg.data);
         if (ev.bay_id === target.bay.id && ev.status === 'present') {
-          Speech.speak('Bay taken, exit navigation.');
+          speak('Bay taken, exit navigation.');
           Alert.alert(
             'Bay taken',
             'The bay you locked was just taken by another car. Head back to search.',
@@ -154,7 +155,7 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
     if (!route || route.steps.length === 0) return;
     if (spokenSteps.current.has(0)) return;
     spokenSteps.current.add(0);
-    Speech.speak(route.steps[0].instruction);
+    speak(route.steps[0].instruction);
   }, [route]);
 
   // Follow user with camera.
@@ -181,7 +182,7 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
     const distToDest = haversineMeters(me, destLL);
     if (distToDest < ARRIVAL_METERS && !parkedRef.current) {
       parkedRef.current = true;
-      Speech.speak('You have arrived at your bay.');
+      speak('You have arrived at your bay.');
       onArrived();
       return;
     }
@@ -202,7 +203,7 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
         setCurrentStep(next);
         if (!spokenSteps.current.has(next)) {
           spokenSteps.current.add(next);
-          Speech.speak(route.steps[next].instruction);
+          speak(route.steps[next].instruction);
         }
       }
     }
@@ -214,7 +215,7 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
         if (offRouteSince.current == null) offRouteSince.current = Date.now();
         else if (Date.now() - offRouteSince.current > OFF_ROUTE_HOLD_MS) {
           offRouteSince.current = null;
-          Speech.speak('Rerouting.');
+          speak('Rerouting.');
           fetchRoute(me);
         }
       } else {

@@ -25,6 +25,7 @@ import {
   openLiveStream,
 } from '../api';
 import { storage } from '../storage';
+import { VoiceSettingsModal } from './VoiceSettingsModal';
 
 const MELBOURNE_CBD: Region = {
   latitude: -37.814,
@@ -83,6 +84,7 @@ export function MapScreen({
   const [selectedLot, setSelectedLot] = useState<Lot | null>(null);
   const [destModalOpen, setDestModalOpen] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
   const [newDestName, setNewDestName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
@@ -471,6 +473,9 @@ export function MapScreen({
           <Pressable style={styles.chip} onPress={() => setDestModalOpen(true)}>
             <Text style={styles.chipText}>Saved</Text>
           </Pressable>
+          <Pressable style={styles.chip} onPress={() => setVoiceModalOpen(true)}>
+            <Text style={styles.chipText}>Voice</Text>
+          </Pressable>
           <Pressable style={styles.chip} onPress={signOut}>
             <Text style={styles.chipText}>Sign out</Text>
           </Pressable>
@@ -686,6 +691,8 @@ export function MapScreen({
           </Pressable>
         </Pressable>
       </Modal>
+
+      <VoiceSettingsModal visible={voiceModalOpen} onClose={() => setVoiceModalOpen(false)} />
 
       {/* Saved destinations sheet */}
       <Modal
