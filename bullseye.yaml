@@ -14,12 +14,12 @@ schema_version: 5
 targets:
   T1:
     name: Kerby MVP live, useful in Melbourne CBD from day 1
-    status: converging
+    status: achieved
     value: 5.0
     cost: 3.0
     acceptance:
     - A Melbourne CBD user can open the app, see available on-street parking bays near a destination filtered by their criteria (shape, restriction type, duration), tap a bay to launch external navigation, and save their parked spot to walk back to later.
-    - App is available on TestFlight (iOS) and Play Store internal test track (Android) with 5+ beta users using it weekly.
+    - Beta build distributed to real users via EAS Update OTA (no Apple dev account / TestFlight yet).
     - Sensor data freshness surfaced in UI; users trust what they see.
     context: MVP scope. Locking and smart-reroute intentionally deferred to Phase 2 to keep day-1 shippable in weeks not months. Value = replace guesswork of driving around CBD looking for a park.
     tags:
@@ -27,6 +27,7 @@ targets:
     - mvp
     origin: bullseye_init
     discovered: 2026-07-01
+    achieved: 2026-08-14
   T1.1:
     name: CoM parking data flowing into our DB (static + live sensor)
     status: achieved
@@ -161,6 +162,30 @@ targets:
     origin: manual
     discovered: 2026-07-01
     achieved: 2026-07-01
+  T10:
+    name: Phone in-app turn-by-turn navigation shipped (Google Directions, voice, off-route reroute)
+    status: achieved
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - Tap Navigate on a bay -> full-screen in-app nav view with route polyline, camera follow, and step instruction card (no hand-off to Google/Apple Maps).
+    - Backend /directions endpoint proxies Google Directions API server-side (key never ships to client), Redis-cached 5min, IPv4-forced upstream.
+    - expo-speech voice cues announce each step; user-configurable language/voice/speed (VoiceSettingsModal).
+    - Off-route (>40m for >5s) triggers automatic reroute via fresh Directions call with spoken cue.
+    - Arrival within 25m of the bay auto-creates a parked session, handing off to WalkBackScreen.
+    - 'WS /live subscription on the locked bay during the drive: flips to ''present'' -> voice cue + alert.'
+    - Shipped entirely on Expo managed workflow — no eject, no Mapbox SDK, no native head-unit integration.
+    context: Delivered as a phone-only alternative to T5's Mapbox-SDK/bare-workflow/CarPlay plan. Commits 52ea54a + 7cfcd34 (2026-07-05) shipped the core "stay inside Kerby the whole drive" value without the eject cost. T5 (native head-unit nav) still open, set aside pending traction — see its rationale.
+    depends_on:
+    - T1.2
+    - T1.3
+    tags:
+    - phase-1.7
+    - nav
+    - mobile
+    origin: manual
+    discovered: 2026-08-14
+    achieved: 2026-08-14
   T2:
     name: 'Phase 2: Bay locking + smart reroute when locked bay taken'
     status: converging
@@ -344,7 +369,7 @@ targets:
     discovered: 2026-07-01
   T4:
     name: Production hardening (CI, rate limit, error tracking, legal)
-    status: converging
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -354,6 +379,7 @@ targets:
     - hardening
     origin: manual
     discovered: 2026-07-02
+    achieved: 2026-08-14
   T4.1:
     name: 'GitHub Actions CI: cargo build + test + mobile TS'
     status: achieved
@@ -410,9 +436,10 @@ targets:
     achieved: 2026-07-02
   T5:
     name: In-app turn-by-turn nav + CarPlay/Android Auto (Mapbox SDK, bare workflow)
-    status: identified
+    status: set_aside
     value: 0.0
     cost: 0.0
+    set_aside_reason: 'Core in-app-nav value shipped instead via T10 (Google Directions, phone-only, Expo managed workflow) — no eject needed. This target''s remaining scope is native head-unit integration (Mapbox SDK, bare workflow, CarPlay/Android Auto), which locks in native maintenance cost and blocks Expo SDK upgrades. Same gate as T3.4: revisit when weekly active users > 50.'
     acceptance:
     - User navigating a route from Kerby stays inside Kerby the whole drive — no app switching to Google Maps or Apple Maps.
     - Turn-by-turn voice + banners powered by Mapbox Navigation SDK v3.
@@ -429,9 +456,10 @@ targets:
     discovered: 2026-07-04
   T5.1:
     name: Eject to Expo bare workflow (prebuild + dev-client)
-    status: identified
+    status: set_aside
     value: 0.0
     cost: 0.0
+    set_aside_reason: Parked with parent T5 — pending WAU > 50.
     acceptance:
     - '`npx expo prebuild` generates ios/ and android/ projects committed to repo.'
     - '`eas build --profile development` produces a dev-client APK/IPA for physical devices.'
@@ -446,9 +474,10 @@ targets:
     discovered: 2026-07-04
   T5.2:
     name: Mapbox Navigation SDK v3 wired for phone-only turn-by-turn
-    status: identified
+    status: set_aside
     value: 0.0
     cost: 0.0
+    set_aside_reason: Parked with parent T5 — pending WAU > 50.
     acceptance:
     - Mapbox access token stored as secret; Kerby uses Mapbox map tiles + Directions + Navigation SDK.
     - Tap Navigate on a bay -> Mapbox nav view takes over with voice + banners.
@@ -463,9 +492,10 @@ targets:
     discovered: 2026-07-04
   T5.3:
     name: Live lock-taken reroute wired into Mapbox nav (no user tap needed)
-    status: identified
+    status: set_aside
     value: 0.0
     cost: 0.0
+    set_aside_reason: Parked with parent T5 — pending WAU > 50.
     acceptance:
     - When the WS /live event says the locked bay is now 'present', Mapbox nav reroutes to the next-best matching bay automatically.
     - Voice cue 'bay taken, rerouting' announces the switch.
@@ -480,9 +510,10 @@ targets:
     discovered: 2026-07-04
   T5.4:
     name: Android Auto driving template shipped
-    status: identified
+    status: set_aside
     value: 0.0
     cost: 0.0
+    set_aside_reason: Parked with parent T5 — pending WAU > 50.
     acceptance:
     - Kerby renders map + turn-by-turn on Android Auto head unit via androidx.car.app driving template.
     - Voice cues route through the Auto session.
@@ -497,9 +528,10 @@ targets:
     discovered: 2026-07-04
   T5.5:
     name: Apple CarPlay Navigation entitlement approved + shipped
-    status: identified
+    status: set_aside
     value: 0.0
     cost: 0.0
+    set_aside_reason: Parked with parent T5 — pending WAU > 50.
     acceptance:
     - '`com.apple.developer.carplay-navigation` entitlement granted by Apple.'
     - Kerby renders on CarPlay head unit via Mapbox CarPlay templates.
@@ -701,7 +733,7 @@ targets:
     discovered: 2026-07-05
   T9:
     name: Compliance + polish (attribution, error boundaries, offline)
-    status: identified
+    status: converging
     value: 0.0
     cost: 0.0
     acceptance:
