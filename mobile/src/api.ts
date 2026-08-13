@@ -296,7 +296,7 @@ async function geocodePhoton(q: string): Promise<GeocodeResult[]> {
     lon: '144.963',
   });
   const resp = await fetch(`https://photon.komoot.io/api/?${qs}`, {
-    headers: { 'User-Agent': 'kerby-mobile/0.1 (kerby@nnavnita.com)' },
+    headers: { 'User-Agent': 'kerby-mobile/0.1 (navnitanandakumar@gmail.com)' },
   });
   if (!resp.ok) throw new Error(`geocode ${resp.status}`);
   const raw = (await resp.json()) as {
