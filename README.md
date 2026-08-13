@@ -48,7 +48,7 @@ Production configs live in `deploy/`. See `deploy/README.md`. TL;DR:
 - API + worker → Fly.io (two apps, one Dockerfile via `BIN` build-arg)
 - Postgres+PostGIS → Supabase (Fly Postgres doesn't ship PostGIS)
 - Redis → Upstash
-- Mobile beta → Expo Go (fastest) or EAS build → TestFlight/Play internal
+- Mobile beta → Expo Go (fastest) or `npx eas-cli update` (OTA) — no Apple dev account yet, so no TestFlight
 
 ## Mobile
 
@@ -76,6 +76,9 @@ mobile/     React Native + Expo mobile app
 Targets tracked in `bullseye.yaml` (managed by the bullseye MCP server).
 Frontier target = the thing to work on next.
 
-- **Phase 1 (MVP)**: find nearby bay + filter + external nav + save spot + walk back
-- **Phase 2**: lock bay + live reroute + push notifications
-- **Phase 3**: saved destinations, paid lots, share links, CarPlay
+- **Phase 1 (MVP)** — done: find nearby bay + filter + external nav + save spot + walk back
+- **Phase 2** — near done: lock bay + live reroute + push notifications
+- **Phase 3** — near done: saved destinations, paid lots, share links (CarPlay/Android Auto set aside, see below)
+- **In-app turn-by-turn nav** — done: Google Directions-powered nav with voice guidance, off-route reroute, all on Expo managed workflow (no eject)
+- Native CarPlay/Android Auto head-unit integration set aside — needs Expo bare workflow eject, revisit when weekly active users > 50
+- **Next up**: auth hardening (password reset, email verify, delete account, refresh tokens), observability (Sentry, structured logs), reliability (advisory locks, GC, pool sizing), remaining compliance/polish (error boundary, offline banner)
