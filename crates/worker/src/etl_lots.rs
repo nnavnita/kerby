@@ -7,6 +7,10 @@ use crate::com::ComClient;
 
 const DATASET: &str = "off-street-car-parks-with-capacity-and-type";
 const BATCH_SIZE: usize = 500;
+// If a fetch ingests fewer than this fraction of the currently stored rows,
+// treat it as a bad/partial upstream response and skip the stale-row sweep
+// rather than deleting rows that just didn't come back this run.
+const MIN_SWEEP_RATIO: f64 = 0.5;
 
 #[derive(Debug, Deserialize)]
 struct LotRecord {
@@ -82,6 +86,12 @@ pub async fn run_lot_etl(pool: &PgPool, com: &ComClient) -> Result<LotEtlReport>
     let ingestible = records.len();
 
     let mut tx = pool.begin().await?;
+
+    let existing: i64 = sqlx::query_scalar("SELECT count(*) FROM off_street_lots")
+        .fetch_one(&mut *tx)
+        .await
+        .context("count existing lots")?;
+
     let mut upserted = 0usize;
     for chunk in records.chunks(BATCH_SIZE) {
         let ids: Vec<&str> = chunk.iter().map(|(id, _, _, _)| id.as_str()).collect();
@@ -135,12 +145,22 @@ pub async fn run_lot_etl(pool: &PgPool, com: &ComClient) -> Result<LotEtlReport>
         upserted += n as usize;
     }
 
-    // Sweep stale.
-    let deleted = sqlx::query("DELETE FROM off_street_lots WHERE source_last_seen_at < $1")
-        .bind(started_at)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+    // Sweep stale, unless this run's ingest count looks too low relative to
+    // what's already stored (likely a bad upstream response).
+    let deleted = if existing > 0 && (ingestible as f64) < existing as f64 * MIN_SWEEP_RATIO {
+        tracing::warn!(
+            ingestible,
+            existing,
+            "skipping stale-lot sweep: ingest count too low vs existing rows"
+        );
+        0
+    } else {
+        sqlx::query("DELETE FROM off_street_lots WHERE source_last_seen_at < $1")
+            .bind(started_at)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+    };
 
     tx.commit().await?;
 

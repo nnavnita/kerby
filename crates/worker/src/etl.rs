@@ -7,6 +7,10 @@ use crate::com::ComClient;
 
 const BAY_DATASET: &str = "on-street-parking-bays";
 const BATCH_SIZE: usize = 500;
+// If a fetch ingests fewer than this fraction of the currently stored rows,
+// treat it as a bad/partial upstream response and skip the stale-row sweep
+// rather than deleting rows that just didn't come back this run.
+const MIN_SWEEP_RATIO: f64 = 0.5;
 
 #[derive(Debug, Deserialize)]
 struct BayRecord {
@@ -56,6 +60,11 @@ pub async fn run_bay_etl(pool: &PgPool, com: &ComClient) -> Result<EtlReport> {
 
     let mut tx = pool.begin().await?;
 
+    let existing: i64 = sqlx::query_scalar("SELECT count(*) FROM bays")
+        .fetch_one(&mut *tx)
+        .await
+        .context("count existing bays")?;
+
     let mut upserted = 0usize;
     for chunk in records.chunks(BATCH_SIZE) {
         let ids: Vec<&str> = chunk
@@ -101,18 +110,29 @@ pub async fn run_bay_etl(pool: &PgPool, com: &ComClient) -> Result<EtlReport> {
         upserted += n as usize;
     }
 
-    // Sweep: delete bays not seen in this run.
-    let deleted = sqlx::query(
-        r#"
-        DELETE FROM bays
-        WHERE source_last_seen_at < $1
-        "#,
-    )
-    .bind(started_at)
-    .execute(&mut *tx)
-    .await
-    .context("sweep stale bays")?
-    .rows_affected();
+    // Sweep: delete bays not seen in this run, unless this run's ingest count
+    // looks too low relative to what's already stored (likely a bad upstream
+    // response) — in that case, leave existing rows in place.
+    let deleted = if existing > 0 && (ingestible as f64) < existing as f64 * MIN_SWEEP_RATIO {
+        tracing::warn!(
+            ingestible,
+            existing,
+            "skipping stale-bay sweep: ingest count too low vs existing rows"
+        );
+        0
+    } else {
+        sqlx::query(
+            r#"
+            DELETE FROM bays
+            WHERE source_last_seen_at < $1
+            "#,
+        )
+        .bind(started_at)
+        .execute(&mut *tx)
+        .await
+        .context("sweep stale bays")?
+        .rows_affected()
+    };
 
     tx.commit().await.context("commit bay etl")?;
 
