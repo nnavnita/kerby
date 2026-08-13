@@ -112,7 +112,7 @@ async fn signup_and_login_returns_token() {
     assert!(!token.is_empty());
 
     let login = reqwest::Client::new()
-        .post(format!("{}/auth/login", &base))
+        .post(format!("{}/auth/login", base))
         .json(&json!({ "email": &email, "password": "testtest123" }))
         .send()
         .await
@@ -129,7 +129,7 @@ async fn login_rejects_wrong_password() {
     signup(&base, &email).await;
 
     let resp = reqwest::Client::new()
-        .post(format!("{}/auth/login", &base))
+        .post(format!("{}/auth/login", base))
         .json(&json!({ "email": &email, "password": "wrongpassword" }))
         .send()
         .await
@@ -144,7 +144,7 @@ async fn signup_rejects_duplicate_email() {
     signup(&base, &email).await;
 
     let resp = reqwest::Client::new()
-        .post(format!("{}/auth/signup", &base))
+        .post(format!("{}/auth/signup", base))
         .json(&json!({ "email": &email, "password": "testtest123" }))
         .send()
         .await
@@ -176,7 +176,7 @@ async fn session_create_current_return_round_trip() {
 
     // Create.
     let create = client
-        .post(format!("{}/sessions", &base))
+        .post(format!("{}/sessions", base))
         .bearer_auth(&token)
         .json(&json!({ "lat": -37.814, "lng": 144.963, "note": "test" }))
         .send()
@@ -188,7 +188,7 @@ async fn session_create_current_return_round_trip() {
 
     // Current.
     let current = client
-        .get(format!("{}/sessions/current", &base))
+        .get(format!("{}/sessions/current", base))
         .bearer_auth(&token)
         .send()
         .await
@@ -199,7 +199,7 @@ async fn session_create_current_return_round_trip() {
 
     // Return.
     let ret = client
-        .post(format!("{}/sessions/{}/return", &base, session_id))
+        .post(format!("{}/sessions/{}/return", base, session_id))
         .bearer_auth(&token)
         .send()
         .await
@@ -233,7 +233,7 @@ async fn lock_create_release_flow() {
 
     // Lock.
     let lock_resp = client
-        .post(format!("{}/locks", &base))
+        .post(format!("{}/locks", base))
         .bearer_auth(&token)
         .json(&json!({ "bay_id": &bay_id }))
         .send()
@@ -245,7 +245,7 @@ async fn lock_create_release_flow() {
 
     // Current lock returns it.
     let current = client
-        .get(format!("{}/locks/current", &base))
+        .get(format!("{}/locks/current", base))
         .bearer_auth(&token)
         .send()
         .await
@@ -256,7 +256,7 @@ async fn lock_create_release_flow() {
 
     // Second lock same user → 409.
     let dup = client
-        .post(format!("{}/locks", &base))
+        .post(format!("{}/locks", base))
         .bearer_auth(&token)
         .json(&json!({ "bay_id": &bay_id }))
         .send()
@@ -266,7 +266,7 @@ async fn lock_create_release_flow() {
 
     // Release.
     let release = client
-        .delete(format!("{}/locks/{}", &base, lock_id))
+        .delete(format!("{}/locks/{}", base, lock_id))
         .bearer_auth(&token)
         .send()
         .await
@@ -282,7 +282,7 @@ async fn destination_crud() {
     let client = reqwest::Client::new();
 
     let create = client
-        .post(format!("{}/destinations", &base))
+        .post(format!("{}/destinations", base))
         .bearer_auth(&token)
         .json(&json!({
             "name": "Home",
@@ -298,7 +298,7 @@ async fn destination_crud() {
     let dest_id = created["id"].as_str().unwrap().to_string();
 
     let list = client
-        .get(format!("{}/destinations", &base))
+        .get(format!("{}/destinations", base))
         .bearer_auth(&token)
         .send()
         .await
@@ -308,7 +308,7 @@ async fn destination_crud() {
     assert_eq!(items.as_array().unwrap().len(), 1);
 
     let del = client
-        .delete(format!("{}/destinations/{}", &base, dest_id))
+        .delete(format!("{}/destinations/{}", base, dest_id))
         .bearer_auth(&token)
         .send()
         .await
