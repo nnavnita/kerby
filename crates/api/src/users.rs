@@ -41,5 +41,7 @@ async fn me(
             .fetch_optional(&state.db)
             .await?;
     let email_verified = row.map(|(v,)| v.is_some()).unwrap_or(false);
-    Ok(Json(serde_json::json!({ "email_verified": email_verified })))
+    Ok(Json(
+        serde_json::json!({ "email_verified": email_verified }),
+    ))
 }

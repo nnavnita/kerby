@@ -44,9 +44,7 @@ async fn main() -> anyhow::Result<()> {
         .filter(|s| !s.is_empty())
         .map(Arc::new);
     if resend_api_key.is_none() {
-        tracing::warn!(
-            "RESEND_API_KEY not set; password reset/verification emails will not send"
-        );
+        tracing::warn!("RESEND_API_KEY not set; password reset/verification emails will not send");
     }
     let email_from = Arc::new(
         std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Kerby <noreply@kerby.app>".to_string()),
