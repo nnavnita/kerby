@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,10 +12,14 @@ import {
 } from 'react-native';
 import { api } from '../api';
 import { storage } from '../storage';
+import { ThemeColors } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = { onSignedIn: (token: string) => void };
 
 export function LoginScreen({ onSignedIn }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -61,7 +65,7 @@ export function LoginScreen({ onSignedIn }: Props) {
       />
       <Pressable style={styles.button} disabled={busy} onPress={submit}>
         {busy ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.brand.primaryText} />
         ) : (
           <Text style={styles.buttonText}>
             {mode === 'login' ? 'Sign in' : 'Create account'}
@@ -77,25 +81,28 @@ export function LoginScreen({ onSignedIn }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center' },
-  title: { fontSize: 40, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 24, opacity: 0.7 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d0d0d0',
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#1E88E5',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  switch: { color: '#1E88E5', textAlign: 'center', marginTop: 16 },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: colors.surface.background },
+    title: { fontSize: 40, fontWeight: '700', textAlign: 'center', marginBottom: 4, color: colors.text.primary },
+    subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 24, opacity: 0.7, color: colors.text.primary },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border.default,
+      borderRadius: 8,
+      padding: 14,
+      marginBottom: 12,
+      fontSize: 16,
+      color: colors.text.primary,
+    },
+    button: {
+      backgroundColor: colors.brand.primary,
+      padding: 16,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    buttonText: { color: colors.brand.primaryText, fontSize: 16, fontWeight: '600' },
+    switch: { color: colors.brand.primary, textAlign: 'center', marginTop: 16 },
+  });
+}

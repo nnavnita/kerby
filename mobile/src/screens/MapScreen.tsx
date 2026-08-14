@@ -26,6 +26,9 @@ import {
 } from '../api';
 import { storage } from '../storage';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
+import { ThemeColors } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
+import { DARK_MAP_STYLE } from '../theme/mapStyle';
 
 const MELBOURNE_CBD: Region = {
   latitude: -37.814,
@@ -69,6 +72,8 @@ export function MapScreen({
   onSessionSaved,
   onStartNav,
 }: Props) {
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const mapRef = useRef<MapView>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -376,13 +381,13 @@ export function MapScreen({
   };
 
   const markerColor = (bay: Bay) => {
-    if (bay.lock?.mine) return '#F9A825';
-    if (bay.lock) return '#7B1FA2';
-    if (!bay.sensor) return '#8A8A8A';
-    if (!bay.sensor.fresh) return '#8A8A8A';
-    if (bay.sensor.status === 'unoccupied') return '#2E7D32';
-    if (bay.sensor.status === 'present') return '#C62828';
-    return '#8A8A8A';
+    if (bay.lock?.mine) return colors.status.warning;
+    if (bay.lock) return colors.status.locked;
+    if (!bay.sensor) return colors.status.neutral;
+    if (!bay.sensor.fresh) return colors.status.neutral;
+    if (bay.sensor.status === 'unoccupied') return colors.status.success;
+    if (bay.sensor.status === 'present') return colors.status.danger;
+    return colors.status.neutral;
   };
 
   return (
@@ -394,11 +399,13 @@ export function MapScreen({
         onRegionChangeComplete={setRegion}
         showsUserLocation
         showsMyLocationButton
+        userInterfaceStyle={scheme}
+        customMapStyle={scheme === 'dark' ? DARK_MAP_STYLE : []}
       >
         {target && (
           <Marker
             coordinate={{ latitude: target.lat, longitude: target.lng }}
-            pinColor="#1E88E5"
+            pinColor={colors.brand.primary}
             title={target.label}
             description="Destination"
           />
@@ -418,7 +425,7 @@ export function MapScreen({
           <Marker
             key={`lot-${l.id}`}
             coordinate={{ latitude: l.lat, longitude: l.lng }}
-            pinColor="#1565C0"
+            pinColor={colors.status.info}
             onPress={() => {
               setSelected(null);
               setSelectedLot(l);
@@ -734,7 +741,7 @@ export function MapScreen({
                       }
                     }}
                   >
-                    <Text style={{ color: '#C62828' }}>Delete</Text>
+                    <Text style={styles.destDeleteText}>Delete</Text>
                   </Pressable>
                 </View>
               )}
@@ -748,7 +755,7 @@ export function MapScreen({
                 onChangeText={setNewDestName}
               />
               <Pressable style={styles.saveDestBtn} onPress={saveCurrentAsDestination}>
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>
+                <Text style={styles.saveDestBtnText}>Save</Text>
               </Pressable>
             </View>
           </Pressable>
@@ -783,211 +790,217 @@ function formatAge(secs?: number): string {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  topBar: {
-    position: 'absolute',
-    top: 60,
-    left: 12,
-    right: 12,
-    gap: 6,
-  },
-  searchCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    paddingVertical: 6,
-  },
-  searchDropdown: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  searchResultRow: {
-    padding: 12,
-    borderRadius: 8,
-  },
-  searchResultText: { fontSize: 14 },
-  targetPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    alignSelf: 'flex-start',
-    maxWidth: '90%',
-    backgroundColor: '#1E88E5',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  targetPillText: { color: '#fff', fontWeight: '600', flexShrink: 1 },
-  targetPillClear: { color: '#fff', fontWeight: '700', paddingLeft: 6 },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  chip: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  chipText: { color: '#333', fontWeight: '600' },
-  bestCard: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 78,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-    gap: 8,
-  },
-  bestLabel: { fontSize: 12, opacity: 0.6 },
-  bestTitle: { fontSize: 16, fontWeight: '700' },
-  bestMeta: { fontSize: 12, opacity: 0.7 },
-  bestActions: { flexDirection: 'row', gap: 6 },
-  smallBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#F9A825',
-  },
-  smallBtnPrimary: { backgroundColor: '#1E88E5' },
-  smallBtnText: { color: '#fff', fontWeight: '700' },
-  statusBar: {
-    position: 'absolute',
-    bottom: 24,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  statusText: { fontSize: 14 },
-  attribText: { fontSize: 10, color: '#888', marginTop: 2 },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'flex-end',
-  },
-  card: {
-    backgroundColor: '#fff',
-    padding: 24,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  cardTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4 },
-  cardStreet: { fontSize: 14, opacity: 0.75, marginBottom: 8 },
-  cardMeta: { fontSize: 14, marginBottom: 4 },
-  navBtn: {
-    marginTop: 12,
-    backgroundColor: '#1E88E5',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  navBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  parkBtn: {
-    marginTop: 12,
-    backgroundColor: '#2E7D32',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  parkBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  lockBtn: {
-    marginTop: 12,
-    backgroundColor: '#F9A825',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  lockBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  filterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  filterName: { fontSize: 15, fontWeight: '600' },
-  filterHint: { fontSize: 12, opacity: 0.6, marginTop: 2 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#F0F0F0',
-  },
-  pillActive: { backgroundColor: '#1E88E5' },
-  pillText: { fontWeight: '600', color: '#333' },
-  pillTextActive: { color: '#fff' },
-  destRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  destName: { fontSize: 16, fontWeight: '600' },
-  destMeta: { fontSize: 12, opacity: 0.6, marginTop: 2 },
-  destDelete: { padding: 8 },
-  destAddRow: {
-    flexDirection: 'row',
-    marginTop: 16,
-    gap: 8,
-  },
-  destInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#d0d0d0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  saveDestBtn: {
-    backgroundColor: '#2E7D32',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.surface.background },
+    topBar: {
+      position: 'absolute',
+      top: 60,
+      left: 12,
+      right: 12,
+      gap: 6,
+    },
+    searchCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.surface.card,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 24,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 15,
+      paddingVertical: 6,
+      color: colors.text.primary,
+    },
+    searchDropdown: {
+      backgroundColor: colors.surface.card,
+      borderRadius: 12,
+      padding: 4,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    searchResultRow: {
+      padding: 12,
+      borderRadius: 8,
+    },
+    searchResultText: { fontSize: 14, color: colors.text.primary },
+    targetPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      alignSelf: 'flex-start',
+      maxWidth: '90%',
+      backgroundColor: colors.brand.primary,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 24,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    targetPillText: { color: colors.text.inverse, fontWeight: '600', flexShrink: 1 },
+    targetPillClear: { color: colors.text.inverse, fontWeight: '700', paddingLeft: 6 },
+    actionRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 6,
+    },
+    chip: {
+      backgroundColor: colors.surface.card,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 24,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    chipText: { color: colors.text.secondary, fontWeight: '600' },
+    bestCard: {
+      position: 'absolute',
+      left: 12,
+      right: 12,
+      bottom: 78,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface.card,
+      padding: 12,
+      borderRadius: 12,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 6,
+      gap: 8,
+    },
+    bestLabel: { fontSize: 12, opacity: 0.6, color: colors.text.primary },
+    bestTitle: { fontSize: 16, fontWeight: '700', color: colors.text.primary },
+    bestMeta: { fontSize: 12, opacity: 0.7, color: colors.text.primary },
+    bestActions: { flexDirection: 'row', gap: 6 },
+    smallBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: colors.status.warning,
+    },
+    smallBtnPrimary: { backgroundColor: colors.brand.primary },
+    smallBtnText: { color: colors.text.inverse, fontWeight: '700' },
+    statusBar: {
+      position: 'absolute',
+      bottom: 24,
+      left: 12,
+      right: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: colors.surface.card,
+      padding: 12,
+      borderRadius: 12,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    statusText: { fontSize: 14, color: colors.text.primary },
+    attribText: { fontSize: 10, color: colors.text.tertiary, marginTop: 2 },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: colors.surface.overlay,
+      justifyContent: 'flex-end',
+    },
+    card: {
+      backgroundColor: colors.surface.card,
+      padding: 24,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+    },
+    cardTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4, color: colors.text.primary },
+    cardStreet: { fontSize: 14, opacity: 0.75, marginBottom: 8, color: colors.text.primary },
+    cardMeta: { fontSize: 14, marginBottom: 4, color: colors.text.primary },
+    navBtn: {
+      marginTop: 12,
+      backgroundColor: colors.brand.primary,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    navBtnText: { color: colors.text.inverse, fontWeight: '700', fontSize: 16 },
+    parkBtn: {
+      marginTop: 12,
+      backgroundColor: colors.status.success,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    parkBtnText: { color: colors.text.inverse, fontWeight: '700', fontSize: 16 },
+    lockBtn: {
+      marginTop: 12,
+      backgroundColor: colors.status.warning,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    lockBtnText: { color: colors.text.inverse, fontWeight: '700', fontSize: 16 },
+    filterRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 12,
+    },
+    filterName: { fontSize: 15, fontWeight: '600', color: colors.text.primary },
+    filterHint: { fontSize: 12, opacity: 0.6, marginTop: 2, color: colors.text.primary },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+    pill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surface.pill,
+    },
+    pillActive: { backgroundColor: colors.brand.primary },
+    pillText: { fontWeight: '600', color: colors.text.secondary },
+    pillTextActive: { color: colors.text.inverse },
+    destRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border.subtle,
+    },
+    destName: { fontSize: 16, fontWeight: '600', color: colors.text.primary },
+    destMeta: { fontSize: 12, opacity: 0.6, marginTop: 2, color: colors.text.primary },
+    destDelete: { padding: 8 },
+    destDeleteText: { color: colors.status.danger },
+    destAddRow: {
+      flexDirection: 'row',
+      marginTop: 16,
+      gap: 8,
+    },
+    destInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border.default,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      color: colors.text.primary,
+    },
+    saveDestBtn: {
+      backgroundColor: colors.status.success,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    saveDestBtnText: { color: colors.text.inverse, fontWeight: '700' },
+  });
+}

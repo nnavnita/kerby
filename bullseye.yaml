@@ -891,14 +891,14 @@ targets:
     discovered: 2026-08-14
   T17:
     name: Dark mode + cohesive design system pass
-    status: identified
+    status: converging
     value: 0.0
     cost: 0.0
     acceptance:
     - App respects system light/dark mode (with in-app override toggle) across all screens - Map, Navigation, WalkBack, Login, VoiceSettings.
     - Shared color/spacing/typography tokens extracted into a theme module (styling is currently ad hoc per-screen) so future screens stay visually consistent.
     - Map tile style switches to match the active theme, not just chrome/UI elements.
-    context: Pure polish, no backend changes. Good candidate to do before onboarding (T18) so new screens are built on the token system instead of retrofitted.
+    context: 'Pure polish, no backend changes. Good candidate to do before onboarding (T18) so new screens are built on the token system instead of retrofitted. Implementation landed 2026-08-14: src/theme/{tokens,ThemeContext,mapStyle}.ts added, all 5 screens + App.tsx migrated off hardcoded hex to theme tokens, Appearance toggle added to VoiceSettingsModal, Android/iOS MapView dark styling wired. Verified in-sandbox via tsc --noEmit (clean) and a Metro bundle export that resolved/bundled all 768 modules cleanly (bundling only failed afterward at the Hermes-bytecode step, a SIGILL from this sandbox''s CPU emulation choking on the native hermesc binary — unrelated to the code, expected to work on a real machine/CI). Not yet marked achieved: no simulator/device was available in-session to run the plan''s 9-step manual QA pass (light/dark cold boot, live OS-toggle re-render, override persistence across restart, status-color stability, Android/iOS map tile rendering, full flow smoke test). Promote to achieved once that manual pass is done.'
     depends_on:
     - T1.3
     tags:

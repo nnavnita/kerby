@@ -11,8 +11,18 @@ import { Bay, SessionDto, api } from './src/api';
 import { registerForPush } from './src/push';
 import { storage } from './src/storage';
 import { loadVoicePrefs } from './src/voice';
+import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
+  );
+}
+
+function AppInner() {
+  const { colors, scheme } = useTheme();
   const [token, setToken] = useState<string | null>(null);
   const [session, setSession] = useState<SessionDto | null>(null);
   const [navTarget, setNavTarget] = useState<{ bay: Bay } | null>(null);
@@ -44,16 +54,16 @@ export default function App() {
 
   if (!bootstrapped) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
+      <View style={[styles.centered, { backgroundColor: colors.surface.background }]}>
+        <ActivityIndicator size="large" color={colors.brand.primary} />
       </View>
     );
   }
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <StatusBar style="auto" />
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface.background }} edges={['top']}>
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {!token ? (
           <LoginScreen
             onSignedIn={async (t) => {
