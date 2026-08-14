@@ -54,6 +54,8 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type Props = {
+  emailVerified: boolean;
+  onResendVerification: () => Promise<{ ok: true }>;
   onSignedOut: () => void;
   onSessionSaved: () => void;
   onStartNav: (bay: Bay) => void;
@@ -66,6 +68,8 @@ type Target = {
 };
 
 export function MapScreen({
+  emailVerified,
+  onResendVerification,
   onSignedOut,
   onSessionSaved,
   onStartNav,
@@ -73,6 +77,8 @@ export function MapScreen({
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const mapRef = useRef<MapView>(null);
+  const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -387,6 +393,27 @@ export function MapScreen({
 
   return (
     <View style={styles.container}>
+      {!emailVerified && !verifyBannerDismissed && (
+        <View style={styles.verifyBanner}>
+          <Text style={styles.verifyBannerText}>Verify your email to secure your account</Text>
+          <Pressable
+            disabled={resendBusy}
+            onPress={async () => {
+              setResendBusy(true);
+              try {
+                await onResendVerification();
+              } finally {
+                setResendBusy(false);
+              }
+            }}
+          >
+            <Text style={styles.verifyBannerAction}>{resendBusy ? 'Sending…' : 'Resend'}</Text>
+          </Pressable>
+          <Pressable onPress={() => setVerifyBannerDismissed(true)}>
+            <Text style={styles.verifyBannerAction}>Dismiss</Text>
+          </Pressable>
+        </View>
+      )}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -788,6 +815,21 @@ function formatAge(secs?: number): string {
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.surface.background },
+    verifyBanner: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: colors.brand.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    verifyBannerText: { flex: 1, color: colors.brand.primaryText, fontSize: 13 },
+    verifyBannerAction: { color: colors.brand.primaryText, fontSize: 13, fontWeight: '700' },
     topBar: {
       position: 'absolute',
       top: 60,
