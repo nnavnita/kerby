@@ -13,9 +13,9 @@ import { api } from '../api';
 import { ThemeColors } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
 
-type Props = { token: string; onDone: () => void };
+type Props = { token: string; onSuccess: () => void; onCancel: () => void };
 
-export function ResetPasswordScreen({ token, onDone }: Props) {
+export function ResetPasswordScreen({ token, onSuccess, onCancel }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [password, setPassword] = useState('');
@@ -26,7 +26,7 @@ export function ResetPasswordScreen({ token, onDone }: Props) {
     try {
       await api.resetPassword(token, password);
       Alert.alert('Password updated', 'Sign in with your new password.');
-      onDone();
+      onSuccess();
     } catch (e: any) {
       Alert.alert('Could not reset password', e?.message ?? 'unknown error');
     } finally {
@@ -55,7 +55,7 @@ export function ResetPasswordScreen({ token, onDone }: Props) {
           <Text style={styles.buttonText}>Update password</Text>
         )}
       </Pressable>
-      <Pressable onPress={onDone}>
+      <Pressable onPress={onCancel}>
         <Text style={styles.switch}>Cancel</Text>
       </Pressable>
     </KeyboardAvoidingView>

@@ -12,7 +12,7 @@ use serde_json::json;
 const DEFAULT_DB: &str = "postgres://kerby:kerby@localhost:5433/kerby";
 const DEFAULT_REDIS: &str = "redis://localhost:6379";
 
-async fn spawn_test_server() -> String {
+async fn spawn_test_server() -> (String, AppState) {
     let db_url = std::env::var("TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .unwrap_or_else(|_| DEFAULT_DB.into());
@@ -42,6 +42,7 @@ async fn spawn_test_server() -> String {
         email_from: Arc::new("test@example.com".to_string()),
     };
 
+    let state_for_test = state.clone();
     let app = build_router(state, false);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -54,7 +55,7 @@ async fn spawn_test_server() -> String {
         )
         .await;
     });
-    format!("http://{}", addr)
+    (format!("http://{}", addr), state_for_test)
 }
 
 fn unique_email() -> String {
@@ -96,7 +97,7 @@ async fn signup(base: &str, email: &str) -> String {
 
 #[tokio::test]
 async fn health_ok() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let resp = reqwest::get(format!("{}/health", base)).await.unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -106,7 +107,7 @@ async fn health_ok() {
 
 #[tokio::test]
 async fn signup_and_login_returns_tokens() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let token = signup(&base, &email).await;
     assert!(!token.is_empty());
@@ -125,7 +126,7 @@ async fn signup_and_login_returns_tokens() {
 
 #[tokio::test]
 async fn login_rejects_wrong_password() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     signup(&base, &email).await;
 
@@ -140,7 +141,7 @@ async fn login_rejects_wrong_password() {
 
 #[tokio::test]
 async fn signup_rejects_duplicate_email() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     signup(&base, &email).await;
 
@@ -155,7 +156,7 @@ async fn signup_rejects_duplicate_email() {
 
 #[tokio::test]
 async fn forgot_password_same_response_for_known_and_unknown_email() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     signup(&base, &email).await;
     let client = reqwest::Client::new();
@@ -183,7 +184,7 @@ async fn forgot_password_same_response_for_known_and_unknown_email() {
 
 #[tokio::test]
 async fn reset_password_with_garbage_token_rejected() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let resp = reqwest::Client::new()
         .post(format!("{}/auth/reset-password", base))
         .json(&json!({ "token": "not-a-real-token", "new_password": "newpassword123" }))
@@ -195,7 +196,7 @@ async fn reset_password_with_garbage_token_rejected() {
 
 #[tokio::test]
 async fn bays_near_shape() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let resp = reqwest::get(format!(
         "{}/bays/near?lat=-37.814&lng=144.963&radius_m=200&limit=3",
         base
@@ -210,7 +211,7 @@ async fn bays_near_shape() {
 
 #[tokio::test]
 async fn session_create_current_return_round_trip() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let token = signup(&base, &email).await;
     let client = reqwest::Client::new();
@@ -252,7 +253,7 @@ async fn session_create_current_return_round_trip() {
 
 #[tokio::test]
 async fn lock_create_release_flow() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let token = signup(&base, &email).await;
     let client = reqwest::Client::new();
@@ -317,7 +318,7 @@ async fn lock_create_release_flow() {
 
 #[tokio::test]
 async fn destination_crud() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let token = signup(&base, &email).await;
     let client = reqwest::Client::new();
@@ -359,7 +360,7 @@ async fn destination_crud() {
 
 #[tokio::test]
 async fn geocode_returns_empty_for_short_query() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     // Query shorter than MIN_QUERY_LEN should return zero results without
     // touching the upstream (safe even when GOOGLE_MAPS_KEY is unset).
     let resp = reqwest::get(format!("{}/geocode?q=ab", base))
@@ -376,7 +377,7 @@ async fn geocode_reports_missing_key() {
     // Test server is constructed with google_maps_key = None. A real query
     // should surface as 500 (the specific reason is redacted in the client
     // response for safety; it's logged server-side).
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let resp = reqwest::get(format!("{}/geocode?q=Federation+Square", base))
         .await
         .unwrap();
@@ -387,7 +388,7 @@ async fn geocode_reports_missing_key() {
 
 #[tokio::test]
 async fn legal_pages_render_html() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     for path in ["/legal/terms", "/legal/privacy"] {
         let resp = reqwest::get(format!("{}{}", base, path)).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK, "{}", path);
@@ -402,7 +403,7 @@ async fn legal_pages_render_html() {
 
 #[tokio::test]
 async fn refresh_rotates_tokens_and_old_access_still_works_until_expiry() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let client = reqwest::Client::new();
 
@@ -433,7 +434,7 @@ async fn refresh_rotates_tokens_and_old_access_still_works_until_expiry() {
 
 #[tokio::test]
 async fn refresh_reuse_revokes_whole_family() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let client = reqwest::Client::new();
 
@@ -479,7 +480,7 @@ async fn refresh_reuse_revokes_whole_family() {
 
 #[tokio::test]
 async fn refresh_rejects_unknown_token() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let resp = reqwest::Client::new()
         .post(format!("{}/auth/refresh", base))
         .json(&json!({ "refresh_token": "not-a-real-token" }))
@@ -491,7 +492,7 @@ async fn refresh_rejects_unknown_token() {
 
 #[tokio::test]
 async fn logout_revokes_only_that_session() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let client = reqwest::Client::new();
 
@@ -544,7 +545,7 @@ async fn logout_revokes_only_that_session() {
 
 #[tokio::test]
 async fn me_reflects_unverified_then_verified_state() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let email = unique_email();
     let client = reqwest::Client::new();
 
@@ -570,7 +571,7 @@ async fn me_reflects_unverified_then_verified_state() {
 
 #[tokio::test]
 async fn verify_email_rejects_garbage_token() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let resp = reqwest::Client::new()
         .post(format!("{}/auth/verify-email", base))
         .json(&json!({ "token": "not-a-real-token" }))
@@ -582,11 +583,60 @@ async fn verify_email_rejects_garbage_token() {
 
 #[tokio::test]
 async fn resend_verification_requires_auth() {
-    let base = spawn_test_server().await;
+    let (base, _state) = spawn_test_server().await;
     let resp = reqwest::Client::new()
         .post(format!("{}/auth/resend-verification", base))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn reset_password_revokes_existing_refresh_tokens() {
+    let (base, state) = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let signup_body: serde_json::Value = signup_resp.json().await.unwrap();
+    let user_id: uuid::Uuid = signup_body["user_id"].as_str().unwrap().parse().unwrap();
+    let old_refresh_token = signup_body["refresh_token"].as_str().unwrap().to_string();
+
+    // Bypass email delivery: issue a real reset token directly via the
+    // library function forgot-password would otherwise email.
+    let raw_reset_token = kerby_api::email_tokens::issue_reset(&state, user_id)
+        .await
+        .unwrap();
+
+    let reset_resp = client
+        .post(format!("{}/auth/reset-password", base))
+        .json(&json!({ "token": &raw_reset_token, "new_password": "newpassword456" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reset_resp.status(), StatusCode::OK);
+
+    // The refresh token issued before the reset must now be dead.
+    let refresh_after_reset = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &old_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_after_reset.status(), StatusCode::UNAUTHORIZED);
+
+    // And the new password actually works.
+    let login_resp = client
+        .post(format!("{}/auth/login", base))
+        .json(&json!({ "email": &email, "password": "newpassword456" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), StatusCode::OK);
 }

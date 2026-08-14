@@ -45,6 +45,7 @@ async fn forgot_password(
     // background task rather than awaited inline, so the handler returns
     // just as fast in both branches.
     if let Some((user_id,)) = row {
+        tracing::debug!(%user_id, "spawning password reset email task");
         let state = state.clone();
         tokio::spawn(async move {
             let raw_token = match email_tokens::issue_reset(&state, user_id).await {

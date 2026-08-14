@@ -73,12 +73,16 @@ function AppInner() {
   // T3.3's share links only ever open kerby:// URLs in *other* apps.
   useEffect(() => {
     const handleUrl = (url: string) => {
-      const { hostname, queryParams } = Linking.parse(url);
+      const { hostname, path, queryParams } = Linking.parse(url);
       const token = queryParams?.token;
       if (typeof token !== 'string') return;
-      if (hostname === 'reset-password') {
+      // Custom-scheme URLs (kerby://reset-password?...) put the route in
+      // `hostname`. Expo-hosted URL forms (no custom scheme) leave
+      // `hostname` null and put the route segment in `path` instead.
+      const route = hostname ?? path?.replace(/^\/+/, '');
+      if (route === 'reset-password') {
         setResetToken(token);
-      } else if (hostname === 'verify-email') {
+      } else if (route === 'verify-email') {
         api
           .verifyEmail(token)
           .then(() => setEmailVerified(true))
@@ -123,7 +127,21 @@ function AppInner() {
       <SafeAreaProvider>
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface.background }} edges={['top']}>
           <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-          <ResetPasswordScreen token={resetToken} onDone={() => setResetToken(null)} />
+          <ResetPasswordScreen
+            token={resetToken}
+            onCancel={() => setResetToken(null)}
+            onSuccess={async () => {
+              // Password reset just revoked every refresh_tokens row for
+              // this account server-side. If the user was signed in when
+              // they went through this flow, the access/refresh tokens we
+              // still hold are dead — land them on a clean signed-out login
+              // screen rather than returning to the (now-broken) app.
+              await storage.clear();
+              setSignedIn(false);
+              setSession(null);
+              setResetToken(null);
+            }}
+          />
         </SafeAreaView>
       </SafeAreaProvider>
     );
