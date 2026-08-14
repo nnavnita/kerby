@@ -6,6 +6,8 @@ pub mod auth;
 pub mod bays;
 pub mod destinations;
 pub mod directions;
+pub mod email;
+pub mod email_tokens;
 pub mod error;
 pub mod geocode;
 pub mod legal;
