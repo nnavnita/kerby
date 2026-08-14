@@ -8,6 +8,7 @@ pub mod destinations;
 pub mod directions;
 pub mod email;
 pub mod email_tokens;
+pub mod email_verify;
 pub mod error;
 pub mod geocode;
 pub mod legal;
@@ -79,7 +80,8 @@ pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
         .merge(directions::routes());
     let mut auth_gated = Router::new()
         .merge(auth::routes())
-        .merge(password_reset::routes());
+        .merge(password_reset::routes())
+        .merge(email_verify::routes());
 
     if with_rate_limit {
         let public_gov = Arc::new(

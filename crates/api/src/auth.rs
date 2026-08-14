@@ -165,7 +165,9 @@ async fn signup(
         }
         Err(e) => return Err(e.into()),
     };
-    Ok(Json(issue_tokens(&state, user_id).await?))
+    let auth_response = issue_tokens(&state, user_id).await?;
+    crate::email_verify::send_verification_email(&state, user_id, &email).await;
+    Ok(Json(auth_response))
 }
 
 async fn login(

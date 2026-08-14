@@ -541,3 +541,52 @@ async fn logout_revokes_only_that_session() {
         .unwrap();
     assert_eq!(refresh_b_still_works.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn me_reflects_unverified_then_verified_state() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let signup_body: serde_json::Value = signup_resp.json().await.unwrap();
+    let access_token = signup_body["access_token"].as_str().unwrap();
+
+    let me_resp = client
+        .get(format!("{}/users/me", base))
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(me_resp.status(), StatusCode::OK);
+    let me_body: serde_json::Value = me_resp.json().await.unwrap();
+    assert_eq!(me_body["email_verified"], false);
+}
+
+#[tokio::test]
+async fn verify_email_rejects_garbage_token() {
+    let base = spawn_test_server().await;
+    let resp = reqwest::Client::new()
+        .post(format!("{}/auth/verify-email", base))
+        .json(&json!({ "token": "not-a-real-token" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn resend_verification_requires_auth() {
+    let base = spawn_test_server().await;
+    let resp = reqwest::Client::new()
+        .post(format!("{}/auth/resend-verification", base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
