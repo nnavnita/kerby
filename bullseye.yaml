@@ -812,7 +812,7 @@ targets:
     achieved: 2026-08-15
   T6.3:
     name: Delete account endpoint (App Store requirement)
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -824,6 +824,7 @@ targets:
     - T6
     origin: manual
     discovered: 2026-07-05
+    achieved: 2026-08-15
   T6.4:
     name: 'Refresh tokens: 15-min access + 30-day refresh'
     status: identified
