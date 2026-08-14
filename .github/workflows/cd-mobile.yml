@@ -1,0 +1,29 @@
+name: CD Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+
+jobs:
+  deploy-mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npx eas-cli update --branch preview --message "$COMMIT_MESSAGE" --non-interactive --clear-cache
+        env:
+          CI: '1'
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          KERBY_API_BASE: https://kerby-api.fly.dev
+          LOCATIONIQ_TOKEN: ${{ secrets.LOCATIONIQ_TOKEN }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
