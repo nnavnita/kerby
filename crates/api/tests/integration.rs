@@ -443,3 +443,56 @@ async fn refresh_rejects_unknown_token() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn logout_revokes_only_that_session() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    // Two independent logins = two independent sessions (families).
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let session_a: serde_json::Value = signup_resp.json().await.unwrap();
+    let refresh_a = session_a["refresh_token"].as_str().unwrap().to_string();
+
+    let login_resp = client
+        .post(format!("{}/auth/login", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let session_b: serde_json::Value = login_resp.json().await.unwrap();
+    let refresh_b = session_b["refresh_token"].as_str().unwrap().to_string();
+
+    // Log out session A.
+    let logout_resp = client
+        .post(format!("{}/auth/logout", base))
+        .json(&json!({ "refresh_token": &refresh_a }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout_resp.status(), StatusCode::OK);
+
+    // Session A's refresh token no longer works.
+    let refresh_after_logout = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &refresh_a }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_after_logout.status(), StatusCode::UNAUTHORIZED);
+
+    // Session B is untouched.
+    let refresh_b_still_works = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &refresh_b }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_b_still_works.status(), StatusCode::OK);
+}
