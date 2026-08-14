@@ -9,7 +9,6 @@ use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
@@ -73,21 +72,6 @@ fn verify_password(hash: &str, pw: &str) -> bool {
         .is_ok()
 }
 
-/// Opaque, high-entropy refresh token. Two concatenated UUIDv4s (~244 bits
-/// of CSPRNG randomness) — reuses the `uuid` crate already in the
-/// dependency tree instead of adding one purely for random-byte generation.
-fn generate_refresh_token() -> String {
-    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
-}
-
-/// SHA-256 hex digest. Refresh tokens are high-entropy random strings, not
-/// user-chosen secrets, so a fast cryptographic hash is the right tool here
-/// — unlike passwords, they don't need Argon2's deliberate slowness.
-fn hash_refresh_token(token: &str) -> String {
-    let digest = Sha256::digest(token.as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 fn make_access_token(state: &AppState, user_id: Uuid) -> ApiResult<(String, DateTime<Utc>)> {
     let now = Utc::now();
     let exp = now + Duration::seconds(state.jwt_ttl_secs);
@@ -114,8 +98,8 @@ async fn issue_tokens_in_family(
     family_id: Uuid,
 ) -> ApiResult<AuthResponse> {
     let (access_token, expires_at) = make_access_token(state, user_id)?;
-    let refresh_token = generate_refresh_token();
-    let refresh_hash = hash_refresh_token(&refresh_token);
+    let refresh_token = crate::tokens::generate_opaque_token();
+    let refresh_hash = crate::tokens::hash_token(&refresh_token);
     let refresh_expires_at = Utc::now() + Duration::seconds(REFRESH_TOKEN_TTL_SECS);
 
     sqlx::query(
@@ -201,7 +185,7 @@ async fn refresh(
     State(state): State<AppState>,
     Json(req): Json<RefreshRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
-    let presented_hash = hash_refresh_token(&req.refresh_token);
+    let presented_hash = crate::tokens::hash_token(&req.refresh_token);
 
     let row: Option<(Uuid, Uuid, Uuid, Option<DateTime<Utc>>, DateTime<Utc>)> = sqlx::query_as(
         "SELECT id, user_id, family_id, revoked_at, expires_at \
@@ -245,7 +229,7 @@ async fn logout(
     State(state): State<AppState>,
     Json(req): Json<LogoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let presented_hash = hash_refresh_token(&req.refresh_token);
+    let presented_hash = crate::tokens::hash_token(&req.refresh_token);
     sqlx::query(
         "UPDATE refresh_tokens SET revoked_at = now() \
          WHERE token_hash = $1 AND revoked_at IS NULL",

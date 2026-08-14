@@ -15,6 +15,7 @@ pub mod lots;
 pub mod sessions;
 pub mod share;
 pub mod state;
+pub mod tokens;
 pub mod users;
 
 use std::sync::Arc;
