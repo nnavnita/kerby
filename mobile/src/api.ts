@@ -216,6 +216,27 @@ export const api = {
       body: { refresh_token: refreshToken },
       auth: false,
     }),
+  forgotPassword: (email: string) =>
+    request<{ ok: true }>('/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+      auth: false,
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ ok: true }>('/auth/reset-password', {
+      method: 'POST',
+      body: { token, new_password: newPassword },
+      auth: false,
+    }),
+  verifyEmail: (token: string) =>
+    request<{ ok: true }>('/auth/verify-email', {
+      method: 'POST',
+      body: { token },
+      auth: false,
+    }),
+  resendVerification: () =>
+    request<{ ok: true }>('/auth/resend-verification', { method: 'POST' }),
+  getMe: () => request<{ email_verified: boolean }>('/users/me'),
   baysNear: (opts: {
     lat: number;
     lng: number;

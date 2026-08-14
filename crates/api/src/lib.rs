@@ -6,15 +6,20 @@ pub mod auth;
 pub mod bays;
 pub mod destinations;
 pub mod directions;
+pub mod email;
+pub mod email_tokens;
+pub mod email_verify;
 pub mod error;
 pub mod geocode;
 pub mod legal;
 pub mod live;
 pub mod locks;
 pub mod lots;
+pub mod password_reset;
 pub mod sessions;
 pub mod share;
 pub mod state;
+pub mod tokens;
 pub mod users;
 
 use std::sync::Arc;
@@ -73,7 +78,10 @@ pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
         .merge(share::routes())
         .merge(geocode::routes())
         .merge(directions::routes());
-    let mut auth_gated = Router::new().merge(auth::routes());
+    let mut auth_gated = Router::new()
+        .merge(auth::routes())
+        .merge(password_reset::routes())
+        .merge(email_verify::routes());
 
     if with_rate_limit {
         let public_gov = Arc::new(

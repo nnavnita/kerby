@@ -9,7 +9,6 @@ use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
@@ -56,7 +55,7 @@ pub struct Claims {
     pub iat: i64,
 }
 
-fn hash_password(pw: &str) -> Result<String, ApiError> {
+pub(crate) fn hash_password(pw: &str) -> Result<String, ApiError> {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
         .hash_password(pw.as_bytes(), &salt)
@@ -71,21 +70,6 @@ fn verify_password(hash: &str, pw: &str) -> bool {
     Argon2::default()
         .verify_password(pw.as_bytes(), &parsed)
         .is_ok()
-}
-
-/// Opaque, high-entropy refresh token. Two concatenated UUIDv4s (~244 bits
-/// of CSPRNG randomness) — reuses the `uuid` crate already in the
-/// dependency tree instead of adding one purely for random-byte generation.
-fn generate_refresh_token() -> String {
-    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
-}
-
-/// SHA-256 hex digest. Refresh tokens are high-entropy random strings, not
-/// user-chosen secrets, so a fast cryptographic hash is the right tool here
-/// — unlike passwords, they don't need Argon2's deliberate slowness.
-fn hash_refresh_token(token: &str) -> String {
-    let digest = Sha256::digest(token.as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn make_access_token(state: &AppState, user_id: Uuid) -> ApiResult<(String, DateTime<Utc>)> {
@@ -114,8 +98,8 @@ async fn issue_tokens_in_family(
     family_id: Uuid,
 ) -> ApiResult<AuthResponse> {
     let (access_token, expires_at) = make_access_token(state, user_id)?;
-    let refresh_token = generate_refresh_token();
-    let refresh_hash = hash_refresh_token(&refresh_token);
+    let refresh_token = crate::tokens::generate_opaque_token();
+    let refresh_hash = crate::tokens::hash_token(&refresh_token);
     let refresh_expires_at = Utc::now() + Duration::seconds(REFRESH_TOKEN_TTL_SECS);
 
     sqlx::query(
@@ -144,17 +128,21 @@ async fn issue_tokens(state: &AppState, user_id: Uuid) -> ApiResult<AuthResponse
     issue_tokens_in_family(state, user_id, Uuid::new_v4()).await
 }
 
-fn validate_credentials(req: &AuthRequest) -> Result<(), ApiError> {
-    let email = req.email.trim();
-    if email.is_empty() || !email.contains('@') {
-        return Err(ApiError::BadRequest("invalid email".into()));
-    }
-    if req.password.len() < 8 {
+pub(crate) fn validate_password(pw: &str) -> Result<(), ApiError> {
+    if pw.len() < 8 {
         return Err(ApiError::BadRequest(
             "password must be at least 8 chars".into(),
         ));
     }
     Ok(())
+}
+
+fn validate_credentials(req: &AuthRequest) -> Result<(), ApiError> {
+    let email = req.email.trim();
+    if email.is_empty() || !email.contains('@') {
+        return Err(ApiError::BadRequest("invalid email".into()));
+    }
+    validate_password(&req.password)
 }
 
 async fn signup(
@@ -177,7 +165,9 @@ async fn signup(
         }
         Err(e) => return Err(e.into()),
     };
-    Ok(Json(issue_tokens(&state, user_id).await?))
+    let auth_response = issue_tokens(&state, user_id).await?;
+    crate::email_verify::send_verification_email(&state, user_id, &email).await;
+    Ok(Json(auth_response))
 }
 
 async fn login(
@@ -201,7 +191,7 @@ async fn refresh(
     State(state): State<AppState>,
     Json(req): Json<RefreshRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
-    let presented_hash = hash_refresh_token(&req.refresh_token);
+    let presented_hash = crate::tokens::hash_token(&req.refresh_token);
 
     let row: Option<(Uuid, Uuid, Uuid, Option<DateTime<Utc>>, DateTime<Utc>)> = sqlx::query_as(
         "SELECT id, user_id, family_id, revoked_at, expires_at \
@@ -245,7 +235,7 @@ async fn logout(
     State(state): State<AppState>,
     Json(req): Json<LogoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let presented_hash = hash_refresh_token(&req.refresh_token);
+    let presented_hash = crate::tokens::hash_token(&req.refresh_token);
     sqlx::query(
         "UPDATE refresh_tokens SET revoked_at = now() \
          WHERE token_hash = $1 AND revoked_at IS NULL",

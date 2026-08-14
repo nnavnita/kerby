@@ -57,6 +57,19 @@ flyctl secrets set --app kerby-worker \
   COM_API_BASE="https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets"
 ```
 
+Optional, for password-reset/email-verification emails:
+
+```sh
+flyctl secrets set --app kerby-api \
+  RESEND_API_KEY="<resend api key>" \
+  EMAIL_FROM="Kerby <noreply@kerby.app>"
+```
+
+- `RESEND_API_KEY` — optional. Without it, the app runs fine but password-reset
+  and email-verification sends silently no-op (logged server-side only, not
+  surfaced to the client). Set it for the feature to actually deliver mail.
+- `EMAIL_FROM` — optional, defaults to `"Kerby <noreply@kerby.app>"` if unset.
+
 ## 5. Deploy
 
 ```sh
