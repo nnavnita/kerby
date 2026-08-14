@@ -85,7 +85,7 @@ async fn signup(base: &str, email: &str) -> String {
     resp.json::<serde_json::Value>()
         .await
         .unwrap()
-        .get("token")
+        .get("access_token")
         .unwrap()
         .as_str()
         .unwrap()
@@ -103,7 +103,7 @@ async fn health_ok() {
 }
 
 #[tokio::test]
-async fn signup_and_login_returns_token() {
+async fn signup_and_login_returns_tokens() {
     let base = spawn_test_server().await;
     let email = unique_email();
     let token = signup(&base, &email).await;
@@ -117,7 +117,8 @@ async fn signup_and_login_returns_token() {
         .unwrap();
     assert_eq!(login.status(), StatusCode::OK);
     let body: serde_json::Value = login.json().await.unwrap();
-    assert!(body.get("token").and_then(|v| v.as_str()).is_some());
+    assert!(body.get("access_token").and_then(|v| v.as_str()).is_some());
+    assert!(body.get("refresh_token").and_then(|v| v.as_str()).is_some());
 }
 
 #[tokio::test]
