@@ -20,7 +20,7 @@ type Props = { onSignedIn: () => void };
 export function LoginScreen({ onSignedIn }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,6 +38,52 @@ export function LoginScreen({ onSignedIn }: Props) {
       setBusy(false);
     }
   };
+
+  const submitForgotPassword = async () => {
+    setBusy(true);
+    try {
+      await api.forgotPassword(email);
+      Alert.alert(
+        'Check your email',
+        'If that email has an account, a reset link is on its way.',
+      );
+      setMode('login');
+    } catch (e: any) {
+      Alert.alert('Something went wrong', e?.message ?? 'unknown error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (mode === 'forgot') {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Text style={styles.title}>Kerby</Text>
+        <Text style={styles.subtitle}>Reset your password</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <Pressable style={styles.button} disabled={busy} onPress={submitForgotPassword}>
+          {busy ? (
+            <ActivityIndicator color={colors.brand.primaryText} />
+          ) : (
+            <Text style={styles.buttonText}>Send reset link</Text>
+          )}
+        </Pressable>
+        <Pressable onPress={() => setMode('login')}>
+          <Text style={styles.switch}>Back to sign in</Text>
+        </Pressable>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -72,6 +118,11 @@ export function LoginScreen({ onSignedIn }: Props) {
           </Text>
         )}
       </Pressable>
+      {mode === 'login' && (
+        <Pressable onPress={() => setMode('forgot')}>
+          <Text style={styles.switch}>Forgot password?</Text>
+        </Pressable>
+      )}
       <Pressable onPress={() => setMode(mode === 'login' ? 'signup' : 'login')}>
         <Text style={styles.switch}>
           {mode === 'login' ? 'New here? Create account' : 'Already have an account? Sign in'}
