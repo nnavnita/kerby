@@ -357,3 +357,89 @@ async fn legal_pages_render_html() {
         assert!(ct.starts_with("text/html"), "{}: {}", path, ct);
     }
 }
+
+#[tokio::test]
+async fn refresh_rotates_tokens_and_old_access_still_works_until_expiry() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let signup_body: serde_json::Value = signup_resp.json().await.unwrap();
+    let refresh_token = signup_body["refresh_token"].as_str().unwrap().to_string();
+
+    let refresh_resp = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_resp.status(), StatusCode::OK);
+    let refreshed: serde_json::Value = refresh_resp.json().await.unwrap();
+    let new_refresh_token = refreshed["refresh_token"].as_str().unwrap();
+    assert_ne!(new_refresh_token, refresh_token, "refresh token must rotate");
+    assert!(refreshed["access_token"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn refresh_reuse_revokes_whole_family() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let signup_body: serde_json::Value = signup_resp.json().await.unwrap();
+    let original_refresh_token = signup_body["refresh_token"].as_str().unwrap().to_string();
+
+    // First use: rotates successfully.
+    let first = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &original_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_body: serde_json::Value = first.json().await.unwrap();
+    let rotated_refresh_token = first_body["refresh_token"].as_str().unwrap().to_string();
+
+    // Reusing the original (now-rotated-away) token must be rejected...
+    let replay = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &original_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+
+    // ...and must also kill the token that replay would have otherwise
+    // rotated into, since the whole family is now revoked.
+    let after_replay = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &rotated_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(after_replay.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn refresh_rejects_unknown_token() {
+    let base = spawn_test_server().await;
+    let resp = reqwest::Client::new()
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": "not-a-real-token" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
