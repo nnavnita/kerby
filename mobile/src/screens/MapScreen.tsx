@@ -25,6 +25,7 @@ import {
   openLiveStream,
 } from '../api';
 import { storage } from '../storage';
+import { AccountModal } from './AccountModal';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
 import { ThemeColors } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
@@ -94,6 +95,7 @@ export function MapScreen({
   const [destModalOpen, setDestModalOpen] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [voiceModalOpen, setVoiceModalOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [newDestName, setNewDestName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
@@ -505,6 +507,9 @@ export function MapScreen({
           <Pressable style={styles.chip} onPress={() => setVoiceModalOpen(true)}>
             <Text style={styles.chipText}>Voice</Text>
           </Pressable>
+          <Pressable style={styles.chip} onPress={() => setAccountModalOpen(true)}>
+            <Text style={styles.chipText}>Account</Text>
+          </Pressable>
           <Pressable style={styles.chip} onPress={signOut}>
             <Text style={styles.chipText}>Sign out</Text>
           </Pressable>
@@ -727,6 +732,11 @@ export function MapScreen({
       </Modal>
 
       <VoiceSettingsModal visible={voiceModalOpen} onClose={() => setVoiceModalOpen(false)} />
+      <AccountModal
+        visible={accountModalOpen}
+        onClose={() => setAccountModalOpen(false)}
+        onDeleted={signOut}
+      />
 
       {/* Saved destinations sheet */}
       <Modal
