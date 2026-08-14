@@ -77,9 +77,9 @@ async function refreshAccessToken(): Promise<string | null> {
 
 async function request<T>(
   path: string,
-  opts: { method?: string; body?: Json; auth?: boolean } = {},
+  opts: { method?: string; body?: Json; auth?: boolean; retryOn401?: boolean } = {},
 ): Promise<T> {
-  const { method = 'GET', body, auth = true } = opts;
+  const { method = 'GET', body, auth = true, retryOn401 = true } = opts;
   if (!auth) {
     return rawRequest<T>(path, { method, body });
   }
@@ -87,7 +87,7 @@ async function request<T>(
   try {
     return await rawRequest<T>(path, { method, body, accessToken });
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) {
+    if (retryOn401 && e instanceof ApiError && e.status === 401) {
       if (!refreshPromise) {
         refreshPromise = refreshAccessToken().finally(() => {
           refreshPromise = null;
@@ -241,6 +241,7 @@ export const api = {
     request<{ ok: true }>('/users/delete-account', {
       method: 'POST',
       body: { password },
+      retryOn401: false,
     }),
   baysNear: (opts: {
     lat: number;
