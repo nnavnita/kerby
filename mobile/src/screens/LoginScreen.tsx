@@ -15,7 +15,7 @@ import { storage } from '../storage';
 import { ThemeColors } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
 
-type Props = { onSignedIn: (token: string) => void };
+type Props = { onSignedIn: () => void };
 
 export function LoginScreen({ onSignedIn }: Props) {
   const { colors } = useTheme();
@@ -30,8 +30,8 @@ export function LoginScreen({ onSignedIn }: Props) {
     try {
       const resp =
         mode === 'login' ? await api.login(email, password) : await api.signup(email, password);
-      await storage.setToken(resp.token, resp.user_id);
-      onSignedIn(resp.token);
+      await storage.setTokens(resp.access_token, resp.refresh_token, resp.user_id);
+      onSignedIn();
     } catch (e: any) {
       Alert.alert('Sign-in failed', e?.message ?? 'unknown error');
     } finally {

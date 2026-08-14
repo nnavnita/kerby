@@ -54,7 +54,6 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type Props = {
-  token: string;
   onSignedOut: () => void;
   onSessionSaved: () => void;
   onStartNav: (bay: Bay) => void;
@@ -67,7 +66,6 @@ type Target = {
 };
 
 export function MapScreen({
-  token,
   onSignedOut,
   onSessionSaved,
   onStartNav,
@@ -112,15 +110,12 @@ export function MapScreen({
   const fetchBays = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await api.baysNear(
-        {
-          lat: searchCentre.lat,
-          lng: searchCentre.lng,
-          radius_m: Math.max(filters.maxWalkM, 150),
-          available_only: filters.availableOnly,
-        },
-        token,
-      );
+      const resp = await api.baysNear({
+        lat: searchCentre.lat,
+        lng: searchCentre.lng,
+        radius_m: Math.max(filters.maxWalkM, 150),
+        available_only: filters.availableOnly,
+      });
       // Apply the client-side "hide no-sensor bays" filter — the backend already
       // enforces available_only and radius.
       const filtered = filters.includeNoSensor
@@ -132,7 +127,7 @@ export function MapScreen({
     } finally {
       setLoading(false);
     }
-  }, [searchCentre.lat, searchCentre.lng, filters, token]);
+  }, [searchCentre.lat, searchCentre.lng, filters]);
 
   const fetchLots = useCallback(async () => {
     if (!filters.includeLots) {
@@ -153,11 +148,11 @@ export function MapScreen({
 
   const refreshDestinations = useCallback(async () => {
     try {
-      setDestinations(await api.listDestinations(token));
+      setDestinations(await api.listDestinations());
     } catch {
       // silent
     }
-  }, [token]);
+  }, []);
 
   // First-run: try to centre on the user's current location.
   useEffect(() => {
@@ -225,7 +220,7 @@ export function MapScreen({
                     text: 'Reroute',
                     onPress: async () => {
                       try {
-                        await api.createLock(token, nextBay.id);
+                        await api.createLock(nextBay.id);
                         fetchBays();
                       } catch (e: any) {
                         Alert.alert('Could not lock', e?.message ?? 'unknown');
@@ -241,7 +236,7 @@ export function MapScreen({
       }
     };
     return () => ws.close();
-  }, [activeLockBayId, bays, token, fetchBays, filters]);
+  }, [activeLockBayId, bays, fetchBays, filters]);
 
   const bestBay = useMemo(() => pickBestBay(bays, filters), [bays, filters]);
 
@@ -288,7 +283,7 @@ export function MapScreen({
   const parkHere = async (bay: Bay) => {
     try {
       const loc = await Location.getCurrentPositionAsync({});
-      await api.createSession(token, {
+      await api.createSession({
         bay_id: bay.id,
         lat: loc.coords.latitude,
         lng: loc.coords.longitude,
@@ -303,7 +298,7 @@ export function MapScreen({
 
   const lockBay = async (bay: Bay) => {
     try {
-      await api.createLock(token, bay.id);
+      await api.createLock(bay.id);
       setSelected(null);
       fetchBays();
     } catch (e: any) {
@@ -313,9 +308,9 @@ export function MapScreen({
 
   const releaseLock = async (bay: Bay) => {
     try {
-      const cur = await api.currentLock(token);
+      const cur = await api.currentLock();
       if (cur && cur.bay_id === bay.id) {
-        await api.releaseLock(token, cur.id);
+        await api.releaseLock(cur.id);
       }
       setSelected(null);
       fetchBays();
@@ -349,7 +344,7 @@ export function MapScreen({
     }
     const centre = target ?? { lat: region.latitude, lng: region.longitude };
     try {
-      await api.saveDestination(token, {
+      await api.saveDestination({
         name: newDestName.trim(),
         lat: centre.lat,
         lng: centre.lng,
@@ -734,7 +729,7 @@ export function MapScreen({
                     style={styles.destDelete}
                     onPress={async () => {
                       try {
-                        await api.deleteDestination(token, item.id);
+                        await api.deleteDestination(item.id);
                         refreshDestinations();
                       } catch (e: any) {
                         Alert.alert('Could not delete', e?.message ?? 'unknown');

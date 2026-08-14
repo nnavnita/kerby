@@ -23,18 +23,18 @@ export default function App() {
 
 function AppInner() {
   const { colors, scheme } = useTheme();
-  const [token, setToken] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
   const [session, setSession] = useState<SessionDto | null>(null);
   const [navTarget, setNavTarget] = useState<{ bay: Bay } | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
 
-  const refreshSession = useCallback(async (t: string) => {
+  const refreshSession = useCallback(async () => {
     try {
-      const s = await api.currentSession(t);
+      const s = await api.currentSession();
       setSession(s ?? null);
     } catch (e) {
       await storage.clear();
-      setToken(null);
+      setSignedIn(false);
       setSession(null);
     }
   }, []);
@@ -42,15 +42,26 @@ function AppInner() {
   useEffect(() => {
     (async () => {
       await loadVoicePrefs();
-      const stored = await storage.getToken();
+      const stored = await storage.getAccessToken();
       if (stored) {
-        setToken(stored);
-        await refreshSession(stored);
-        registerForPush(stored).catch(() => {});
+        setSignedIn(true);
+        await refreshSession();
+        registerForPush().catch(() => {});
       }
       setBootstrapped(true);
     })();
   }, [refreshSession]);
+
+  const signOut = async () => {
+    const refreshToken = await storage.getRefreshToken();
+    if (refreshToken) {
+      await api.logout(refreshToken).catch(() => {});
+    }
+    await storage.clear();
+    setSignedIn(false);
+    setSession(null);
+    setNavTarget(null);
+  };
 
   if (!bootstrapped) {
     return (
@@ -64,23 +75,21 @@ function AppInner() {
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface.background }} edges={['top']}>
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-        {!token ? (
+        {!signedIn ? (
           <LoginScreen
-            onSignedIn={async (t) => {
-              setToken(t);
-              await refreshSession(t);
-              registerForPush(t).catch(() => {});
+            onSignedIn={async () => {
+              setSignedIn(true);
+              await refreshSession();
+              registerForPush().catch(() => {});
             }}
           />
         ) : session ? (
           <WalkBackScreen
-            token={token}
             session={session}
             onReturned={() => setSession(null)}
           />
         ) : navTarget ? (
           <NavigationScreen
-            token={token}
             target={navTarget}
             onCancel={() => setNavTarget(null)}
             onArrived={async () => {
@@ -88,13 +97,13 @@ function AppInner() {
               // bay's coordinates, then close the nav screen. WalkBackScreen
               // takes over via the session state.
               try {
-                await api.createSession(token, {
+                await api.createSession({
                   bay_id: navTarget.bay.id,
                   lat: navTarget.bay.lat,
                   lng: navTarget.bay.lng,
                   note: navTarget.bay.street ?? undefined,
                 });
-                await refreshSession(token);
+                await refreshSession();
               } finally {
                 setNavTarget(null);
               }
@@ -102,13 +111,8 @@ function AppInner() {
           />
         ) : (
           <MapScreen
-            token={token}
-            onSignedOut={() => {
-              setToken(null);
-              setSession(null);
-              setNavTarget(null);
-            }}
-            onSessionSaved={() => refreshSession(token)}
+            onSignedOut={signOut}
+            onSessionSaved={() => refreshSession()}
             onStartNav={(bay) => setNavTarget({ bay })}
           />
         )}
