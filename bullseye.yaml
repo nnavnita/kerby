@@ -782,7 +782,7 @@ targets:
     discovered: 2026-07-05
   T6.1:
     name: Password reset via email token
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -794,9 +794,10 @@ targets:
     - T6
     origin: manual
     discovered: 2026-07-05
+    achieved: 2026-08-15
   T6.2:
     name: Email verification on signup
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -808,6 +809,7 @@ targets:
     - T6
     origin: manual
     discovered: 2026-07-05
+    achieved: 2026-08-15
   T6.3:
     name: Delete account endpoint (App Store requirement)
     status: identified
