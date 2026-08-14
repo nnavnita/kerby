@@ -63,6 +63,15 @@ module.exports = () => ({
       // LocationIQ token is only used as a fallback when the backend proxy
       // fails or has no Google key configured.
       locationiqToken: process.env.LOCATIONIQ_TOKEN ?? '',
+      eas: {
+        projectId: '09f4e36e-e96e-4968-a710-0dc80af29b0b',
+      },
+    },
+    updates: {
+      url: 'https://u.expo.dev/09f4e36e-e96e-4968-a710-0dc80af29b0b',
+    },
+    runtimeVersion: {
+      policy: 'sdkVersion',
     },
   },
 });
