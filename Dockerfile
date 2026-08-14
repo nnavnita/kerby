@@ -1,5 +1,5 @@
 # Multi-target Rust build. Pass BIN=kerby-api or BIN=kerby-worker to select.
-FROM rust:1.83-slim AS builder
+FROM rust:1.97.1-slim-bookworm AS builder
 ARG BIN=kerby-api
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
