@@ -236,7 +236,9 @@ async fn refresh(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(issue_tokens_in_family(&state, user_id, family_id).await?))
+    Ok(Json(
+        issue_tokens_in_family(&state, user_id, family_id).await?,
+    ))
 }
 
 async fn logout(
@@ -280,8 +282,8 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let user_id = decode_bearer(&parts.headers, &state.jwt_secret)
-            .ok_or(ApiError::Unauthorized)?;
+        let user_id =
+            decode_bearer(&parts.headers, &state.jwt_secret).ok_or(ApiError::Unauthorized)?;
         tracing::Span::current().record("user_id", tracing::field::display(user_id));
         Ok(AuthUser(user_id))
     }

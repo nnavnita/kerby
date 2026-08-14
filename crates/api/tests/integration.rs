@@ -382,7 +382,10 @@ async fn refresh_rotates_tokens_and_old_access_still_works_until_expiry() {
     assert_eq!(refresh_resp.status(), StatusCode::OK);
     let refreshed: serde_json::Value = refresh_resp.json().await.unwrap();
     let new_refresh_token = refreshed["refresh_token"].as_str().unwrap();
-    assert_ne!(new_refresh_token, refresh_token, "refresh token must rotate");
+    assert_ne!(
+        new_refresh_token, refresh_token,
+        "refresh token must rotate"
+    );
     assert!(refreshed["access_token"].as_str().is_some());
 }
 
