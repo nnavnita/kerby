@@ -55,7 +55,7 @@ pub struct Claims {
     pub iat: i64,
 }
 
-fn hash_password(pw: &str) -> Result<String, ApiError> {
+pub(crate) fn hash_password(pw: &str) -> Result<String, ApiError> {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
         .hash_password(pw.as_bytes(), &salt)
@@ -128,17 +128,21 @@ async fn issue_tokens(state: &AppState, user_id: Uuid) -> ApiResult<AuthResponse
     issue_tokens_in_family(state, user_id, Uuid::new_v4()).await
 }
 
-fn validate_credentials(req: &AuthRequest) -> Result<(), ApiError> {
-    let email = req.email.trim();
-    if email.is_empty() || !email.contains('@') {
-        return Err(ApiError::BadRequest("invalid email".into()));
-    }
-    if req.password.len() < 8 {
+pub(crate) fn validate_password(pw: &str) -> Result<(), ApiError> {
+    if pw.len() < 8 {
         return Err(ApiError::BadRequest(
             "password must be at least 8 chars".into(),
         ));
     }
     Ok(())
+}
+
+fn validate_credentials(req: &AuthRequest) -> Result<(), ApiError> {
+    let email = req.email.trim();
+    if email.is_empty() || !email.contains('@') {
+        return Err(ApiError::BadRequest("invalid email".into()));
+    }
+    validate_password(&req.password)
 }
 
 async fn signup(

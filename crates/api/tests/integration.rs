@@ -154,6 +154,46 @@ async fn signup_rejects_duplicate_email() {
 }
 
 #[tokio::test]
+async fn forgot_password_same_response_for_known_and_unknown_email() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    signup(&base, &email).await;
+    let client = reqwest::Client::new();
+
+    let known = client
+        .post(format!("{}/auth/forgot-password", base))
+        .json(&json!({ "email": &email }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(known.status(), StatusCode::OK);
+    let known_body: serde_json::Value = known.json().await.unwrap();
+
+    let unknown = client
+        .post(format!("{}/auth/forgot-password", base))
+        .json(&json!({ "email": "not-a-real-account@example.com" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), StatusCode::OK);
+    let unknown_body: serde_json::Value = unknown.json().await.unwrap();
+
+    assert_eq!(known_body, unknown_body);
+}
+
+#[tokio::test]
+async fn reset_password_with_garbage_token_rejected() {
+    let base = spawn_test_server().await;
+    let resp = reqwest::Client::new()
+        .post(format!("{}/auth/reset-password", base))
+        .json(&json!({ "token": "not-a-real-token", "new_password": "newpassword123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn bays_near_shape() {
     let base = spawn_test_server().await;
     let resp = reqwest::get(format!(
