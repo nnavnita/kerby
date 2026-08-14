@@ -38,11 +38,12 @@ export function AccountModal({ visible, onClose, onDeleted }: Props) {
   };
 
   const confirmDelete = () => {
+    setBusy(true);
     Alert.alert(
       'Delete account?',
       'This permanently deletes your account and all your data. This cannot be undone.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel', onPress: () => setBusy(false) },
         { text: 'Delete', style: 'destructive', onPress: doDelete },
       ],
     );
@@ -56,7 +57,13 @@ export function AccountModal({ visible, onClose, onDeleted }: Props) {
       reset();
       onDeleted();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Something went wrong');
+      setError(
+        e instanceof ApiError
+          ? e.status === 401
+            ? 'Incorrect password'
+            : e.message
+          : 'Something went wrong',
+      );
     } finally {
       setBusy(false);
     }
@@ -64,7 +71,7 @@ export function AccountModal({ visible, onClose, onDeleted }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close}>
+      <Pressable style={styles.backdrop} onPress={() => { if (!busy) close(); }}>
         <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
           <View style={styles.header}>
             <Text style={styles.title}>Account</Text>
@@ -95,7 +102,7 @@ export function AccountModal({ visible, onClose, onDeleted }: Props) {
             )}
           </Pressable>
 
-          <Pressable onPress={close}>
+          <Pressable onPress={() => { if (!busy) close(); }}>
             <Text style={styles.link}>Cancel</Text>
           </Pressable>
         </Pressable>
