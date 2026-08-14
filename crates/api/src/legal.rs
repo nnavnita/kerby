@@ -103,7 +103,7 @@ async fn privacy() -> Response {
 <p>Account data is retained until you delete your account. Bay locks are retained for 30 days after they expire. Parked-session history is retained for 90 days.</p>
 
 <h2>Deleting your account</h2>
-<p>Email <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a> with "Delete my account" and the email address you registered with. We erase your data within 7 days.</p>
+<p>Open the app, tap Account, then Delete account, and confirm with your password. Your account and all associated data (parking sessions, saved destinations, bay locks) are deleted immediately.</p>
 
 <h2>Contact</h2>
 <p>Questions? <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a>.</p>
