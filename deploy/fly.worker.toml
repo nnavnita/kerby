@@ -17,7 +17,7 @@ primary_region = "syd"
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  memory_mb = 256
+  memory_mb = 512
 
 # Worker has no HTTP surface — no [http_service] block.
 # Keep exactly one machine running so the poll loop never gaps.
