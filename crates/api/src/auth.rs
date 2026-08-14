@@ -157,9 +157,10 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        decode_bearer(&parts.headers, &state.jwt_secret)
-            .map(AuthUser)
-            .ok_or((StatusCode::UNAUTHORIZED, "unauthorized"))
+        let user_id = decode_bearer(&parts.headers, &state.jwt_secret)
+            .ok_or((StatusCode::UNAUTHORIZED, "unauthorized"))?;
+        tracing::Span::current().record("user_id", tracing::field::display(user_id));
+        Ok(AuthUser(user_id))
     }
 }
 

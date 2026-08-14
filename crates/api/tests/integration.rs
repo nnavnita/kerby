@@ -95,13 +95,11 @@ async fn signup(base: &str, email: &str) -> String {
 #[tokio::test]
 async fn health_ok() {
     let base = spawn_test_server().await;
-    let body = reqwest::get(format!("{}/health", base))
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
-    assert_eq!(body, "ok");
+    let resp = reqwest::get(format!("{}/health", base)).await.unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["db"], true);
+    assert_eq!(body["redis"], true);
 }
 
 #[tokio::test]
