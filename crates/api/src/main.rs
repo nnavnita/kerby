@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 use kerby_api::state::AppState;
-use kerby_api::{build_router, live, DEFAULT_JWT_TTL_SECS};
+use kerby_api::{build_router, live, DEFAULT_ACCESS_TOKEN_TTL_SECS};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let jwt_ttl_secs: i64 = std::env::var("JWT_TTL_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_JWT_TTL_SECS);
+        .unwrap_or(DEFAULT_ACCESS_TOKEN_TTL_SECS);
 
     let db = sqlx::PgPool::connect(&db_url).await?;
     sqlx::migrate!("../../migrations").run(&db).await?;

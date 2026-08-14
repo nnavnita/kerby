@@ -62,7 +62,9 @@ fn request_id_header(request_id: Option<&RequestId>) -> String {
         .to_string()
 }
 
-pub const DEFAULT_JWT_TTL_SECS: i64 = 30 * 24 * 60 * 60;
+/// Access token TTL. Short-lived by design — session continuity comes from
+/// the refresh token (see `auth.rs`), not from a long-lived JWT.
+pub const DEFAULT_ACCESS_TOKEN_TTL_SECS: i64 = 15 * 60;
 
 pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
     let mut public_read = Router::new()

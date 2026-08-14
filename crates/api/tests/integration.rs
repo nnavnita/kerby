@@ -85,7 +85,7 @@ async fn signup(base: &str, email: &str) -> String {
     resp.json::<serde_json::Value>()
         .await
         .unwrap()
-        .get("token")
+        .get("access_token")
         .unwrap()
         .as_str()
         .unwrap()
@@ -103,7 +103,7 @@ async fn health_ok() {
 }
 
 #[tokio::test]
-async fn signup_and_login_returns_token() {
+async fn signup_and_login_returns_tokens() {
     let base = spawn_test_server().await;
     let email = unique_email();
     let token = signup(&base, &email).await;
@@ -117,7 +117,8 @@ async fn signup_and_login_returns_token() {
         .unwrap();
     assert_eq!(login.status(), StatusCode::OK);
     let body: serde_json::Value = login.json().await.unwrap();
-    assert!(body.get("token").and_then(|v| v.as_str()).is_some());
+    assert!(body.get("access_token").and_then(|v| v.as_str()).is_some());
+    assert!(body.get("refresh_token").and_then(|v| v.as_str()).is_some());
 }
 
 #[tokio::test]
@@ -355,4 +356,146 @@ async fn legal_pages_render_html() {
             .unwrap_or("");
         assert!(ct.starts_with("text/html"), "{}: {}", path, ct);
     }
+}
+
+#[tokio::test]
+async fn refresh_rotates_tokens_and_old_access_still_works_until_expiry() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let signup_body: serde_json::Value = signup_resp.json().await.unwrap();
+    let refresh_token = signup_body["refresh_token"].as_str().unwrap().to_string();
+
+    let refresh_resp = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_resp.status(), StatusCode::OK);
+    let refreshed: serde_json::Value = refresh_resp.json().await.unwrap();
+    let new_refresh_token = refreshed["refresh_token"].as_str().unwrap();
+    assert_ne!(
+        new_refresh_token, refresh_token,
+        "refresh token must rotate"
+    );
+    assert!(refreshed["access_token"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn refresh_reuse_revokes_whole_family() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let signup_body: serde_json::Value = signup_resp.json().await.unwrap();
+    let original_refresh_token = signup_body["refresh_token"].as_str().unwrap().to_string();
+
+    // First use: rotates successfully.
+    let first = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &original_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_body: serde_json::Value = first.json().await.unwrap();
+    let rotated_refresh_token = first_body["refresh_token"].as_str().unwrap().to_string();
+
+    // Reusing the original (now-rotated-away) token must be rejected...
+    let replay = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &original_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+
+    // ...and must also kill the token that replay would have otherwise
+    // rotated into, since the whole family is now revoked.
+    let after_replay = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &rotated_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(after_replay.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn refresh_rejects_unknown_token() {
+    let base = spawn_test_server().await;
+    let resp = reqwest::Client::new()
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": "not-a-real-token" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn logout_revokes_only_that_session() {
+    let base = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    // Two independent logins = two independent sessions (families).
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let session_a: serde_json::Value = signup_resp.json().await.unwrap();
+    let refresh_a = session_a["refresh_token"].as_str().unwrap().to_string();
+
+    let login_resp = client
+        .post(format!("{}/auth/login", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let session_b: serde_json::Value = login_resp.json().await.unwrap();
+    let refresh_b = session_b["refresh_token"].as_str().unwrap().to_string();
+
+    // Log out session A.
+    let logout_resp = client
+        .post(format!("{}/auth/logout", base))
+        .json(&json!({ "refresh_token": &refresh_a }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout_resp.status(), StatusCode::OK);
+
+    // Session A's refresh token no longer works.
+    let refresh_after_logout = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &refresh_a }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_after_logout.status(), StatusCode::UNAUTHORIZED);
+
+    // Session B is untouched.
+    let refresh_b_still_works = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &refresh_b }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_b_still_works.status(), StatusCode::OK);
 }

@@ -30,7 +30,6 @@ const ARRIVAL_METERS = 25;
 const STEP_ADVANCE_METERS = 20;
 
 type Props = {
-  token: string;
   target: {
     bay: Bay;
   };
@@ -38,7 +37,7 @@ type Props = {
   onArrived: () => void;
 };
 
-export function NavigationScreen({ token, target, onCancel, onArrived }: Props) {
+export function NavigationScreen({ target, onCancel, onArrived }: Props) {
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const mapRef = useRef<MapView>(null);

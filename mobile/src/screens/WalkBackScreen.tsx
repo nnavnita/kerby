@@ -6,12 +6,11 @@ import { ThemeColors } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
 
 type Props = {
-  token: string;
   session: SessionDto;
   onReturned: () => void;
 };
 
-export function WalkBackScreen({ token, session, onReturned }: Props) {
+export function WalkBackScreen({ session, onReturned }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [me, setMe] = useState<{ lat: number; lng: number } | null>(null);
@@ -41,7 +40,7 @@ export function WalkBackScreen({ token, session, onReturned }: Props) {
 
   const markReturned = async () => {
     try {
-      await api.returnSession(token, session.id);
+      await api.returnSession(session.id);
       onReturned();
     } catch (e: any) {
       Alert.alert('Could not mark returned', e?.message ?? 'unknown');
