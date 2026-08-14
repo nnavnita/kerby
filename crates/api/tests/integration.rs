@@ -38,6 +38,8 @@ async fn spawn_test_server() -> String {
         events: events_tx,
         http: reqwest::Client::new(),
         google_maps_key: None,
+        resend_api_key: None,
+        email_from: Arc::new("test@example.com".to_string()),
     };
 
     let app = build_router(state, false);

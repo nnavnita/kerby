@@ -39,6 +39,19 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("GOOGLE_MAPS_KEY not set; /geocode will return errors");
     }
 
+    let resend_api_key = std::env::var("RESEND_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(Arc::new);
+    if resend_api_key.is_none() {
+        tracing::warn!(
+            "RESEND_API_KEY not set; password reset/verification emails will not send"
+        );
+    }
+    let email_from = Arc::new(
+        std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Kerby <noreply@kerby.app>".to_string()),
+    );
+
     // Force outbound over IPv4 so upstream IP allowlists (e.g. the Google
     // Maps key restriction) see the same address the operator whitelisted.
     // Dual-stack hosts otherwise randomly egress over IPv6.
@@ -56,6 +69,8 @@ async fn main() -> anyhow::Result<()> {
         events: events_tx,
         http,
         google_maps_key,
+        resend_api_key,
+        email_from,
     };
 
     let app = build_router(state, true);
