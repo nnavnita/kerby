@@ -27,9 +27,14 @@ async function rawRequest<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await resp.text();
-  const parsed = text ? JSON.parse(text) : null;
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
   if (!resp.ok) {
-    const msg = (parsed && (parsed as any).error) || resp.statusText;
+    const msg = (parsed as any)?.error || text || resp.statusText;
     throw new ApiError(resp.status, msg);
   }
   return parsed as T;
@@ -41,6 +46,14 @@ async function rawRequest<T>(
 // call would see the first call's already-rotated-away token and fail.
 let refreshPromise: Promise<string | null> | null = null;
 
+// Fired only when the server actively rejects a refresh token (expired,
+// revoked, or reuse-detected) — not on transient network failures. Lets
+// App.tsx sign the user out when a session is permanently gone.
+let onAuthLost: (() => void) | null = null;
+export function setOnAuthLost(handler: (() => void) | null): void {
+  onAuthLost = handler;
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = await storage.getRefreshToken();
   if (!refreshToken) return null;
@@ -51,7 +64,13 @@ async function refreshAccessToken(): Promise<string | null> {
     });
     await storage.setTokens(resp.access_token, resp.refresh_token, resp.user_id);
     return resp.access_token;
-  } catch {
+  } catch (e) {
+    if (e instanceof ApiError) {
+      // The server actively rejected this refresh token (expired, revoked,
+      // or reuse-detected) — this session is permanently gone, not a
+      // transient network blip. Let the app know so it can sign out.
+      onAuthLost?.();
+    }
     return null;
   }
 }

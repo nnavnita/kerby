@@ -3,7 +3,6 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 use argon2::Argon2;
 use axum::extract::{FromRequestParts, State};
 use axum::http::request::Parts;
-use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
@@ -275,14 +274,14 @@ fn decode_bearer(headers: &axum::http::HeaderMap, secret: &str) -> Option<Uuid> 
 
 #[async_trait::async_trait]
 impl FromRequestParts<AppState> for AuthUser {
-    type Rejection = (StatusCode, &'static str);
+    type Rejection = ApiError;
 
     async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let user_id = decode_bearer(&parts.headers, &state.jwt_secret)
-            .ok_or((StatusCode::UNAUTHORIZED, "unauthorized"))?;
+            .ok_or(ApiError::Unauthorized)?;
         tracing::Span::current().record("user_id", tracing::field::display(user_id));
         Ok(AuthUser(user_id))
     }

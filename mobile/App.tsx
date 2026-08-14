@@ -7,7 +7,7 @@ import { LoginScreen } from './src/screens/LoginScreen';
 import { MapScreen } from './src/screens/MapScreen';
 import { NavigationScreen } from './src/screens/NavigationScreen';
 import { WalkBackScreen } from './src/screens/WalkBackScreen';
-import { Bay, SessionDto, api } from './src/api';
+import { ApiError, Bay, SessionDto, api, setOnAuthLost } from './src/api';
 import { registerForPush } from './src/push';
 import { storage } from './src/storage';
 import { loadVoicePrefs } from './src/voice';
@@ -33,9 +33,11 @@ function AppInner() {
       const s = await api.currentSession();
       setSession(s ?? null);
     } catch (e) {
-      await storage.clear();
-      setSignedIn(false);
-      setSession(null);
+      if (e instanceof ApiError && e.status === 401) {
+        await storage.clear();
+        setSignedIn(false);
+        setSession(null);
+      }
     }
   }, []);
 
@@ -52,7 +54,7 @@ function AppInner() {
     })();
   }, [refreshSession]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     const refreshToken = await storage.getRefreshToken();
     if (refreshToken) {
       await api.logout(refreshToken).catch(() => {});
@@ -61,7 +63,14 @@ function AppInner() {
     setSignedIn(false);
     setSession(null);
     setNavTarget(null);
-  };
+  }, []);
+
+  useEffect(() => {
+    setOnAuthLost(() => {
+      signOut();
+    });
+    return () => setOnAuthLost(null);
+  }, [signOut]);
 
   if (!bootstrapped) {
     return (
