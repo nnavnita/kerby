@@ -237,6 +237,11 @@ export const api = {
   resendVerification: () =>
     request<{ ok: true }>('/auth/resend-verification', { method: 'POST' }),
   getMe: () => request<{ email_verified: boolean }>('/users/me'),
+  deleteAccount: (password: string) =>
+    request<{ ok: true }>('/users/delete-account', {
+      method: 'POST',
+      body: { password },
+    }),
   baysNear: (opts: {
     lat: number;
     lng: number;
