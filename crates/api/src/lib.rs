@@ -81,7 +81,8 @@ pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
     let mut auth_gated = Router::new()
         .merge(auth::routes())
         .merge(password_reset::routes())
-        .merge(email_verify::routes());
+        .merge(email_verify::routes())
+        .merge(users::rate_limited_routes());
 
     if with_rate_limit {
         let public_gov = Arc::new(

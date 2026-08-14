@@ -63,7 +63,7 @@ pub(crate) fn hash_password(pw: &str) -> Result<String, ApiError> {
         .map_err(|e| ApiError::Internal(format!("hash: {e}")))
 }
 
-fn verify_password(hash: &str, pw: &str) -> bool {
+pub(crate) fn verify_password(hash: &str, pw: &str) -> bool {
     let Ok(parsed) = PasswordHash::new(hash) else {
         return false;
     };
