@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use axum::extract::{Query, State};
-use axum::routing::get;
+use axum::extract::{Path, Query, State};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
@@ -13,7 +13,9 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/bays/near", get(near))
+    Router::new()
+        .route("/bays/near", get(near))
+        .route("/bays/:id/refresh-sensor", post(refresh_sensor))
 }
 
 const DEFAULT_RADIUS_M: i32 = 500;
@@ -21,6 +23,8 @@ const MAX_RADIUS_M: i32 = 2_000;
 const DEFAULT_LIMIT: i32 = 200;
 const MAX_LIMIT: i32 = 500;
 const DEFAULT_MAX_STALE_SECS: i64 = 2 * 60 * 60;
+const SENSOR_DATASET: &str = "on-street-parking-bay-sensors";
+const REDIS_TTL_SECS: u64 = 6 * 60 * 60;
 
 #[derive(Deserialize)]
 pub struct NearQuery {
@@ -74,11 +78,34 @@ pub struct NearResponse {
     pub bays: Vec<BayNear>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct SensorPayload {
     status: String,
     source_updated_at: DateTime<Utc>,
     fetched_at: DateTime<Utc>,
+    #[serde(default)]
+    zone_number: Option<i32>,
+}
+
+#[derive(Serialize)]
+pub struct RefreshSensorResponse {
+    pub bay_id: String,
+    pub checked_at: DateTime<Utc>,
+    pub sensor: SensorInfo,
+}
+
+#[derive(Deserialize)]
+struct ComRecordsResponse {
+    results: Vec<ComSensorRecord>,
+}
+
+#[derive(Deserialize)]
+struct ComSensorRecord {
+    kerbsideid: i64,
+    status_description: String,
+    status_timestamp: DateTime<Utc>,
+    #[serde(default)]
+    zone_number: Option<i32>,
 }
 
 async fn near(
@@ -206,4 +233,109 @@ async fn near(
         generated_at: now,
         bays,
     }))
+}
+
+async fn refresh_sensor(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<RefreshSensorResponse>> {
+    if id.trim().is_empty() {
+        return Err(ApiError::BadRequest("bay id required".into()));
+    }
+
+    let base = state.com_api_base.as_ref().ok_or_else(|| {
+        ApiError::Internal("COM_API_BASE not configured for sensor refresh".into())
+    })?;
+
+    let record = fetch_com_sensor(&state, base, &id).await?;
+    if record.kerbsideid.to_string() != id {
+        tracing::warn!(
+            requested_bay_id = %id,
+            returned_kerbsideid = record.kerbsideid,
+            "CoM sensor refresh returned a different kerbsideid"
+        );
+    }
+
+    let checked_at = Utc::now();
+    let payload = SensorPayload {
+        status: normalise_status(&record.status_description).to_string(),
+        source_updated_at: record.status_timestamp,
+        fetched_at: checked_at,
+        zone_number: record.zone_number,
+    };
+    let value = serde_json::to_string(&payload)
+        .map_err(|e| ApiError::Internal(format!("sensor encode: {e}")))?;
+
+    let key = format!("bay:{}:status", id);
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
+    let previous: Option<String> = conn.get(&key).await?;
+    let previous_payload = previous
+        .as_deref()
+        .and_then(|v| serde_json::from_str::<SensorPayload>(v).ok());
+    let changed = previous_payload.as_ref() != Some(&payload);
+
+    let _: () = conn.set_ex(&key, &value, REDIS_TTL_SECS).await?;
+    if changed {
+        let _: () = conn.publish(format!("bay:{id}"), &value).await?;
+    }
+
+    let now = Utc::now();
+    let age_secs = (now - payload.source_updated_at).num_seconds();
+    Ok(Json(RefreshSensorResponse {
+        bay_id: id,
+        checked_at,
+        sensor: SensorInfo {
+            status: payload.status,
+            source_updated_at: Some(payload.source_updated_at),
+            fetched_at: Some(payload.fetched_at),
+            fresh: age_secs >= 0 && age_secs <= DEFAULT_MAX_STALE_SECS,
+            age_secs: Some(age_secs),
+        },
+    }))
+}
+
+async fn fetch_com_sensor(
+    state: &AppState,
+    base: &str,
+    bay_id: &str,
+) -> ApiResult<ComSensorRecord> {
+    let url = format!("{}/{}/records", base.trim_end_matches('/'), SENSOR_DATASET);
+    let where_expr = if bay_id.chars().all(|c| c.is_ascii_digit()) {
+        format!("kerbsideid={bay_id}")
+    } else {
+        format!("kerbsideid=\"{}\"", bay_id.replace('"', "\\\""))
+    };
+    let mut req = state
+        .http
+        .get(&url)
+        .query(&[("where", where_expr.as_str()), ("limit", "1")]);
+    if let Some(key) = &state.com_api_key {
+        req = req.header("Authorization", format!("apikey {key}"));
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| ApiError::Internal(format!("CoM sensor refresh request failed: {e}")))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(ApiError::Internal(format!(
+            "CoM sensor refresh returned {status}: {body}"
+        )));
+    }
+
+    let body: ComRecordsResponse = resp
+        .json()
+        .await
+        .map_err(|e| ApiError::Internal(format!("CoM sensor refresh decode failed: {e}")))?;
+    body.results.into_iter().next().ok_or(ApiError::NotFound)
+}
+
+fn normalise_status(raw: &str) -> &'static str {
+    match raw {
+        "Present" => "present",
+        "Unoccupied" => "unoccupied",
+        _ => "unknown",
+    }
 }

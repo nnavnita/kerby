@@ -35,6 +35,7 @@ const MELBOURNE_CBD: Region = {
 };
 
 const REFRESH_MS = 15_000;
+const STREET_SPOT_LATITUDE_DELTA = 0.0035;
 
 type Filters = {
   availableOnly: boolean;
@@ -89,6 +90,7 @@ export function MapScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [refreshingBayId, setRefreshingBayId] = useState<string | null>(null);
 
   const activeLockBayId = useMemo(
     () => bays.find((b) => b.lock?.mine)?.id ?? null,
@@ -103,6 +105,7 @@ export function MapScreen({
         : { lat: region.latitude, lng: region.longitude },
     [target, region.latitude, region.longitude],
   );
+  const streetSpotMode = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
 
   const fetchBays = useCallback(async () => {
     setLoading(true);
@@ -112,7 +115,8 @@ export function MapScreen({
           lat: searchCentre.lat,
           lng: searchCentre.lng,
           radius_m: Math.max(filters.maxWalkM, 150),
-          available_only: filters.availableOnly,
+          available_only: filters.availableOnly && !streetSpotMode,
+          limit: streetSpotMode ? 500 : undefined,
         },
         token,
       );
@@ -127,7 +131,7 @@ export function MapScreen({
     } finally {
       setLoading(false);
     }
-  }, [searchCentre.lat, searchCentre.lng, filters, token]);
+  }, [searchCentre.lat, searchCentre.lng, filters, streetSpotMode, token]);
 
   const fetchLots = useCallback(async () => {
     if (!filters.includeLots) {
@@ -145,6 +149,11 @@ export function MapScreen({
       console.warn('lots fetch failed', e?.message);
     }
   }, [searchCentre.lat, searchCentre.lng, filters.maxWalkM, filters.includeLots]);
+
+  const refreshMap = useCallback(() => {
+    fetchBays();
+    fetchLots();
+  }, [fetchBays, fetchLots]);
 
   const refreshDestinations = useCallback(async () => {
     try {
@@ -178,14 +187,12 @@ export function MapScreen({
   }, [refreshDestinations]);
 
   useEffect(() => {
-    fetchBays();
-    fetchLots();
+    refreshMap();
     const t = setInterval(() => {
-      fetchBays();
-      fetchLots();
+      refreshMap();
     }, REFRESH_MS);
     return () => clearInterval(t);
-  }, [fetchBays, fetchLots]);
+  }, [refreshMap]);
 
   // WS reroute subscription — active when the user holds a lock.
   useEffect(() => {
@@ -319,6 +326,25 @@ export function MapScreen({
     }
   };
 
+  const refreshBaySensor = async (bay: Bay) => {
+    setRefreshingBayId(bay.id);
+    try {
+      const refreshed = await api.refreshBaySensor(bay.id, token);
+      const updateBay = (b: Bay) =>
+        b.id === refreshed.bay_id ? { ...b, sensor: refreshed.sensor } : b;
+      setBays((items) => items.map(updateBay));
+      setSelected((current) => (current ? updateBay(current) : current));
+    } catch (e: any) {
+      const message =
+        e?.status === 404
+          ? 'City does not currently publish a live sensor row for this bay.'
+          : e?.message ?? 'unknown';
+      Alert.alert('Could not refresh sensor', message);
+    } finally {
+      setRefreshingBayId(null);
+    }
+  };
+
   /// Start in-app turn-by-turn navigation to a specific bay. Called from
   /// the bay detail sheet and the best-bay card.
   const startNav = (bay: Bay) => {
@@ -385,6 +411,38 @@ export function MapScreen({
     return '#8A8A8A';
   };
 
+  const canTargetBay = (bay: Bay) => {
+    if (bay.lock?.mine) return true;
+    if (bay.lock) return false;
+    if (!bay.sensor) return filters.includeNoSensor;
+    return bay.sensor.fresh && bay.sensor.status === 'unoccupied';
+  };
+
+  const markerLabel = (bay: Bay) => {
+    if (bay.lock?.mine) return 'Locked by you';
+    if (bay.lock) return 'Locked by another driver';
+    if (!bay.sensor) return 'No sensor coverage';
+    if (!bay.sensor.fresh) return 'Sensor stale';
+    if (bay.sensor.status === 'unoccupied') return 'Available';
+    if (bay.sensor.status === 'present') return 'Taken';
+    return 'Unknown';
+  };
+
+  const spotMarkerStyle = (bay: Bay) => {
+    if (bay.lock?.mine) return [styles.spotMarker, styles.spotMarkerMine];
+    if (bay.lock) return [styles.spotMarker, styles.spotMarkerLocked];
+    if (!bay.sensor || !bay.sensor.fresh) {
+      return [styles.spotMarker, styles.spotMarkerUnknown];
+    }
+    if (bay.sensor.status === 'unoccupied') {
+      return [styles.spotMarker, styles.spotMarkerAvailable];
+    }
+    if (bay.sensor.status === 'present') {
+      return [styles.spotMarker, styles.spotMarkerTaken];
+    }
+    return [styles.spotMarker, styles.spotMarkerUnknown];
+  };
+
   return (
     <View style={styles.container}>
       <MapView
@@ -407,12 +465,17 @@ export function MapScreen({
           <Marker
             key={b.id}
             coordinate={{ latitude: b.lat, longitude: b.lng }}
-            pinColor={markerColor(b)}
+            pinColor={streetSpotMode ? undefined : markerColor(b)}
+            anchor={{ x: 0.5, y: 0.5 }}
+            title={`Bay ${b.id}`}
+            description={markerLabel(b)}
             onPress={() => {
               setSelectedLot(null);
               setSelected(b);
             }}
-          />
+          >
+            {streetSpotMode ? <View style={spotMarkerStyle(b)} /> : undefined}
+          </Marker>
         ))}
         {lots.map((l) => (
           <Marker
@@ -467,6 +530,13 @@ export function MapScreen({
           </View>
         )}
         <View style={styles.actionRow}>
+          <Pressable
+            style={[styles.chip, loading && styles.chipDisabled]}
+            onPress={refreshMap}
+            disabled={loading}
+          >
+            <Text style={styles.chipText}>Refresh</Text>
+          </Pressable>
           <Pressable style={styles.chip} onPress={() => setFilterModalOpen(true)}>
             <Text style={styles.chipText}>Filters</Text>
           </Pressable>
@@ -541,11 +611,18 @@ export function MapScreen({
                 {selected.street && <Text style={styles.cardStreet}>{selected.street}</Text>}
                 <Text style={styles.cardMeta}>{selected.distance_m} m away</Text>
                 {selected.sensor ? (
-                  <Text style={styles.cardMeta}>
-                    Sensor: {selected.sensor.status}
-                    {selected.sensor.fresh ? '' : ' (stale)'} ·{' '}
-                    {formatAge(selected.sensor.age_secs)}
-                  </Text>
+                  <>
+                    <Text style={styles.cardMeta}>
+                      City reading: {selected.sensor.status}
+                      {selected.sensor.fresh ? '' : ' (stale)'} ·{' '}
+                      {formatAge(selected.sensor.age_secs)}
+                    </Text>
+                    {selected.sensor.fetched_at && (
+                      <Text style={styles.cardMeta}>
+                        Kerby checked: {formatTimestampAge(selected.sensor.fetched_at)}
+                      </Text>
+                    )}
+                  </>
                 ) : (
                   <Text style={styles.cardMeta}>No sensor coverage</Text>
                 )}
@@ -560,12 +637,23 @@ export function MapScreen({
                 )}
 
                 <Pressable
-                  style={styles.navBtn}
-                  onPress={() => startNav(selected)}
+                  style={[styles.refreshSensorBtn, refreshingBayId === selected.id && styles.chipDisabled]}
+                  onPress={() => refreshBaySensor(selected)}
+                  disabled={refreshingBayId === selected.id}
                 >
-                  <Text style={styles.navBtnText}>Navigate</Text>
+                  <Text style={styles.refreshSensorBtnText}>
+                    {refreshingBayId === selected.id ? 'Refreshing sensor...' : 'Refresh sensor'}
+                  </Text>
                 </Pressable>
-                {!selected.lock || selected.lock.mine ? (
+                {canTargetBay(selected) && (
+                  <Pressable
+                    style={styles.navBtn}
+                    onPress={() => startNav(selected)}
+                  >
+                    <Text style={styles.navBtnText}>Navigate</Text>
+                  </Pressable>
+                )}
+                {selected.lock?.mine || (!selected.lock && canTargetBay(selected)) ? (
                   <Pressable
                     style={styles.lockBtn}
                     onPress={() => (selected.lock?.mine ? releaseLock(selected) : lockBay(selected))}
@@ -783,8 +871,31 @@ function formatAge(secs?: number): string {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
+function formatTimestampAge(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  return formatAge(secs);
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  spotMarker: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  spotMarkerAvailable: { backgroundColor: '#2E7D32' },
+  spotMarkerTaken: { backgroundColor: 'rgba(198,40,40,0.5)' },
+  spotMarkerUnknown: { backgroundColor: 'rgba(90,90,90,0.45)' },
+  spotMarkerLocked: { backgroundColor: '#7B1FA2' },
+  spotMarkerMine: { backgroundColor: '#F9A825' },
   topBar: {
     position: 'absolute',
     top: 60,
@@ -843,6 +954,7 @@ const styles = StyleSheet.create({
   targetPillClear: { color: '#fff', fontWeight: '700', paddingLeft: 6 },
   actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-end',
     gap: 6,
   },
@@ -856,6 +968,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
+  chipDisabled: { opacity: 0.6 },
   chipText: { color: '#333', fontWeight: '600' },
   bestCard: {
     position: 'absolute',
@@ -925,6 +1038,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   navBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  refreshSensorBtn: {
+    marginTop: 12,
+    backgroundColor: '#F0F4F8',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  refreshSensorBtnText: { color: '#2B3945', fontWeight: '700', fontSize: 16 },
   parkBtn: {
     marginTop: 12,
     backgroundColor: '#2E7D32',

@@ -12,4 +12,6 @@ pub struct AppState {
     pub events: broadcast::Sender<SensorEvent>,
     pub http: reqwest::Client,
     pub google_maps_key: Option<Arc<String>>,
+    pub com_api_base: Option<Arc<String>>,
+    pub com_api_key: Option<Arc<String>>,
 }

@@ -38,6 +38,8 @@ async fn spawn_test_server() -> String {
         events: events_tx,
         http: reqwest::Client::new(),
         google_maps_key: None,
+        com_api_base: None,
+        com_api_key: None,
     };
 
     let app = build_router(state, false);

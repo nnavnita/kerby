@@ -117,6 +117,12 @@ export type NearResponse = {
   bays: Bay[];
 };
 
+export type RefreshSensorResponse = {
+  bay_id: string;
+  checked_at: string;
+  sensor: SensorInfo;
+};
+
 export type SessionDto = {
   id: string;
   bay_id: string | null;
@@ -139,6 +145,7 @@ export const api = {
       lng: number;
       radius_m: number;
       available_only: boolean;
+      limit?: number;
     },
     token?: string,
   ) => {
@@ -148,8 +155,14 @@ export const api = {
       radius_m: String(opts.radius_m),
       available_only: String(opts.available_only),
     });
+    if (opts.limit != null) qs.set('limit', String(opts.limit));
     return request<NearResponse>(`/bays/near?${qs.toString()}`, { token });
   },
+  refreshBaySensor: (bayId: string, token?: string) =>
+    request<RefreshSensorResponse>(`/bays/${encodeURIComponent(bayId)}/refresh-sensor`, {
+      method: 'POST',
+      token,
+    }),
   createSession: (
     token: string,
     body: { bay_id?: string | null; lat: number; lng: number; note?: string | null },
