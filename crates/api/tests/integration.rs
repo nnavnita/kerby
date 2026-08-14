@@ -640,3 +640,86 @@ async fn reset_password_revokes_existing_refresh_tokens() {
         .unwrap();
     assert_eq!(login_resp.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn delete_account_with_correct_password_removes_account() {
+    let (base, _state) = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+
+    let signup_resp = client
+        .post(format!("{}/auth/signup", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    let signup_body: serde_json::Value = signup_resp.json().await.unwrap();
+    let access_token = signup_body["access_token"].as_str().unwrap().to_string();
+    let old_refresh_token = signup_body["refresh_token"].as_str().unwrap().to_string();
+
+    let delete_resp = client
+        .post(format!("{}/users/delete-account", base))
+        .bearer_auth(&access_token)
+        .json(&json!({ "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(delete_resp.status(), StatusCode::OK);
+
+    // The refresh token issued before deletion must now be dead.
+    let refresh_after_delete = client
+        .post(format!("{}/auth/refresh", base))
+        .json(&json!({ "refresh_token": &old_refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh_after_delete.status(), StatusCode::UNAUTHORIZED);
+
+    // Account is actually gone — proven the same way every other test in
+    // this file proves state, via HTTP: it can no longer log in.
+    let login_resp = client
+        .post(format!("{}/auth/login", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn delete_account_with_wrong_password_rejected() {
+    let (base, _state) = spawn_test_server().await;
+    let email = unique_email();
+    let client = reqwest::Client::new();
+    let access_token = signup(&base, &email).await;
+
+    let delete_resp = client
+        .post(format!("{}/users/delete-account", base))
+        .bearer_auth(&access_token)
+        .json(&json!({ "password": "wrongpassword" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(delete_resp.status(), StatusCode::UNAUTHORIZED);
+
+    // Nothing was deleted — the original password still works.
+    let login_resp = client
+        .post(format!("{}/auth/login", base))
+        .json(&json!({ "email": &email, "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn delete_account_requires_auth() {
+    let (base, _state) = spawn_test_server().await;
+    let resp = reqwest::Client::new()
+        .post(format!("{}/users/delete-account", base))
+        .json(&json!({ "password": "testtest123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
