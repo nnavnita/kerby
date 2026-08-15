@@ -42,7 +42,6 @@ const MELBOURNE_CBD: Region = {
 const REFRESH_MS = 15_000;
 const STREET_SPOT_LATITUDE_DELTA = 0.0015;
 const STREET_SPOT_BAY_LIMIT = 50;
-const STREET_SPOT_IDLE_MS = 1_200;
 const REGION_REFRESH_DEBOUNCE_MS = 250;
 const STREET_SPOT_REFETCH_DISTANCE_M = 40;
 const MAP_REFETCH_DISTANCE_M = 120;
@@ -90,9 +89,7 @@ export function MapScreen({
   const [resendBusy, setResendBusy] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const streetSpotIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const regionRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const streetSpotRenderReadyRef = useRef(false);
   const bayFetchSeqRef = useRef(0);
   const lotFetchSeqRef = useRef(0);
   const latestRegionRef = useRef<Region>(MELBOURNE_CBD);
@@ -114,7 +111,6 @@ export function MapScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [streetSpotRenderReady, setStreetSpotRenderReady] = useState(false);
 
   const activeLockBayId = useMemo(
     () => bays.find((b) => b.lock?.mine)?.id ?? null,
@@ -129,28 +125,6 @@ export function MapScreen({
     [searchCentreLat, searchCentreLng],
   );
   const streetQueryMode = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
-  const streetRenderMode = streetQueryMode && streetSpotRenderReady;
-
-  const setStreetSpotReady = useCallback((ready: boolean) => {
-    streetSpotRenderReadyRef.current = ready;
-    setStreetSpotRenderReady(ready);
-  }, []);
-
-  // Only cancels the pending "become ready" timer — does NOT tear down an
-  // already-mounted street marker set. Fires on every touch-move frame
-  // during a drag/pinch (onRegionChange), so it must stay non-destructive:
-  // synchronously unmounting the whole tracksViewChanges={false} custom
-  // marker array mid-gesture raced react-native-maps' iOS annotation
-  // bookkeeping during Fabric's mount commit and crashed
-  // (NSInvalidArgumentException insertObject:atIndex: object cannot be
-  // nil, confirmed via on-device crash logs). Actual teardown happens
-  // once, at gesture end, only when really leaving street-zoom.
-  const clearStreetSpotIdleTimer = useCallback(() => {
-    if (streetSpotIdleTimer.current) {
-      clearTimeout(streetSpotIdleTimer.current);
-      streetSpotIdleTimer.current = null;
-    }
-  }, []);
 
   const handleRegionChangeComplete = useCallback(
     (nextRegion: Region) => {
@@ -178,18 +152,8 @@ export function MapScreen({
       ) {
         setRegion(nextRegion);
       }
-      clearStreetSpotIdleTimer();
-      if (wasStreetQuery && !isStreetQuery && streetSpotRenderReadyRef.current) {
-        setStreetSpotReady(false);
-      }
-      if (nextRegion.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA) {
-        streetSpotIdleTimer.current = setTimeout(() => {
-          setStreetSpotReady(true);
-          streetSpotIdleTimer.current = null;
-        }, STREET_SPOT_IDLE_MS);
-      }
     },
-    [clearStreetSpotIdleTimer, region, setStreetSpotReady],
+    [region],
   );
 
   const fetchBays = useCallback(async () => {
@@ -381,7 +345,6 @@ export function MapScreen({
 
   useEffect(() => {
     return () => {
-      if (streetSpotIdleTimer.current) clearTimeout(streetSpotIdleTimer.current);
       if (regionRefreshTimer.current) clearTimeout(regionRefreshTimer.current);
     };
   }, []);
@@ -555,7 +518,6 @@ export function MapScreen({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={region}
-        onRegionChange={clearStreetSpotIdleTimer}
         onRegionChangeComplete={handleRegionChangeComplete}
         showsUserLocation
         showsMyLocationButton
@@ -570,38 +532,42 @@ export function MapScreen({
             description="Destination"
           />
         )}
-        {streetQueryMode
-          ? // DIAGNOSTIC (temporary): render zero street-mode markers to
-            // isolate whether the iOS SIGABRT/insertObject:nil crash is
-            // caused by this render path at all, independent of marker
-            // style/key/timing — three prior fixes targeting those didn't
-            // stop the crash. Revert once confirmed either way.
-            null
-          : bays.map((b) => (
-              <Marker
-                key={b.id}
-                coordinate={{ latitude: b.lat, longitude: b.lng }}
-                pinColor={markerColor(b)}
-                title={`Bay ${b.id}`}
-                description={markerLabel(b)}
-                onPress={() => {
-                  setSelectedLot(null);
-                  setSelected(b);
-                }}
-              />
-            ))}
-        {!streetQueryMode &&
-          lots.map((l) => (
-            <Marker
-              key={`lot-${l.id}`}
-              coordinate={{ latitude: l.lat, longitude: l.lng }}
-              pinColor={colors.status.info}
-              onPress={() => {
-                setSelected(null);
-                setSelectedLot(l);
-              }}
-            />
-          ))}
+        {/*
+          bays/lots render unconditionally on streetQueryMode — the
+          conditional-JSX-branch pattern this replaced bulk-unmounted the
+          entire marker array in one frame the instant the zoom threshold
+          crossed, which is the actual iOS crash trigger (AIRMap's
+          insertReactSubview/removeReactSubview hits a native nil-index
+          bug on rapid bulk subview add/remove — confirmed via a
+          diagnostic build that rendered zero street-mode markers and
+          still crashed at the exact same transition). lots already
+          empties itself asynchronously via the fetchLots effect
+          (streetQueryMode dependency) — no JSX-level gate needed.
+        */}
+        {bays.map((b) => (
+          <Marker
+            key={b.id}
+            coordinate={{ latitude: b.lat, longitude: b.lng }}
+            pinColor={markerColor(b)}
+            title={`Bay ${b.id}`}
+            description={markerLabel(b)}
+            onPress={() => {
+              setSelectedLot(null);
+              setSelected(b);
+            }}
+          />
+        ))}
+        {lots.map((l) => (
+          <Marker
+            key={`lot-${l.id}`}
+            coordinate={{ latitude: l.lat, longitude: l.lng }}
+            pinColor={colors.status.info}
+            onPress={() => {
+              setSelected(null);
+              setSelectedLot(l);
+            }}
+          />
+        ))}
       </MapView>
 
       {/* Search + destination pill */}
