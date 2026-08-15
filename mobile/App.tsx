@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
+import { AppMetrics, AppMetricsRoot } from 'expo-observe';
 
 import { LoginScreen } from './src/screens/LoginScreen';
 import { MapScreen } from './src/screens/MapScreen';
@@ -15,13 +16,15 @@ import { storage } from './src/storage';
 import { loadVoicePrefs } from './src/voice';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
-export default function App() {
+function App() {
   return (
     <ThemeProvider>
       <AppInner />
     </ThemeProvider>
   );
 }
+
+export default AppMetricsRoot.wrap(App);
 
 function AppInner() {
   const { colors, scheme } = useTheme();
@@ -65,6 +68,11 @@ function AppInner() {
         registerForPush().catch(() => {});
       }
       setBootstrapped(true);
+      // App is interactive: auth check, initial session/verification
+      // fetch, and the loading spinner are all done — this is the point
+      // every cold-start landing screen (Login/Map/WalkBack) becomes
+      // visible and usable.
+      AppMetrics.markInteractive();
     })();
   }, [refreshSession, refreshMe]);
 
