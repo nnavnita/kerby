@@ -136,15 +136,21 @@ export function MapScreen({
     setStreetSpotRenderReady(ready);
   }, []);
 
-  const clearStreetSpotIdle = useCallback(() => {
+  // Only cancels the pending "become ready" timer — does NOT tear down an
+  // already-mounted street marker set. Fires on every touch-move frame
+  // during a drag/pinch (onRegionChange), so it must stay non-destructive:
+  // synchronously unmounting the whole tracksViewChanges={false} custom
+  // marker array mid-gesture raced react-native-maps' iOS annotation
+  // bookkeeping during Fabric's mount commit and crashed
+  // (NSInvalidArgumentException insertObject:atIndex: object cannot be
+  // nil, confirmed via on-device crash logs). Actual teardown happens
+  // once, at gesture end, only when really leaving street-zoom.
+  const clearStreetSpotIdleTimer = useCallback(() => {
     if (streetSpotIdleTimer.current) {
       clearTimeout(streetSpotIdleTimer.current);
       streetSpotIdleTimer.current = null;
     }
-    if (streetSpotRenderReadyRef.current) {
-      setStreetSpotReady(false);
-    }
-  }, [setStreetSpotReady]);
+  }, []);
 
   const handleRegionChangeComplete = useCallback(
     (nextRegion: Region) => {
@@ -172,7 +178,10 @@ export function MapScreen({
       ) {
         setRegion(nextRegion);
       }
-      clearStreetSpotIdle();
+      clearStreetSpotIdleTimer();
+      if (wasStreetQuery && !isStreetQuery && streetSpotRenderReadyRef.current) {
+        setStreetSpotReady(false);
+      }
       if (nextRegion.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA) {
         streetSpotIdleTimer.current = setTimeout(() => {
           setStreetSpotReady(true);
@@ -180,7 +189,7 @@ export function MapScreen({
         }, STREET_SPOT_IDLE_MS);
       }
     },
-    [clearStreetSpotIdle, region, setStreetSpotReady],
+    [clearStreetSpotIdleTimer, region, setStreetSpotReady],
   );
 
   const fetchBays = useCallback(async () => {
@@ -568,7 +577,7 @@ export function MapScreen({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={region}
-        onRegionChange={clearStreetSpotIdle}
+        onRegionChange={clearStreetSpotIdleTimer}
         onRegionChangeComplete={handleRegionChangeComplete}
         showsUserLocation
         showsMyLocationButton
