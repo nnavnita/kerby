@@ -571,21 +571,12 @@ export function MapScreen({
           />
         )}
         {streetQueryMode
-          ? streetRenderMode
-            ? bays.map((b) => (
-              <Marker
-                key={b.id}
-                coordinate={{ latitude: b.lat, longitude: b.lng }}
-                pinColor={markerColor(b)}
-                title={`Bay ${b.id}`}
-                description={markerLabel(b)}
-                onPress={() => {
-                  setSelectedLot(null);
-                  setSelected(b);
-                }}
-              />
-            ))
-            : null
+          ? // DIAGNOSTIC (temporary): render zero street-mode markers to
+            // isolate whether the iOS SIGABRT/insertObject:nil crash is
+            // caused by this render path at all, independent of marker
+            // style/key/timing — three prior fixes targeting those didn't
+            // stop the crash. Revert once confirmed either way.
+            null
           : bays.map((b) => (
               <Marker
                 key={b.id}
