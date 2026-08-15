@@ -8,7 +8,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::optional_auth_user;
+use crate::auth::{optional_auth_user, AuthUser};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
@@ -25,6 +25,8 @@ const MAX_LIMIT: i32 = 500;
 const DEFAULT_MAX_STALE_SECS: i64 = 2 * 60 * 60;
 const SENSOR_DATASET: &str = "on-street-parking-bay-sensors";
 const REDIS_TTL_SECS: u64 = 6 * 60 * 60;
+const MAX_BAY_ID_LEN: usize = 32;
+const SENSOR_REFRESH_MIN_INTERVAL_SECS: i64 = 30;
 
 #[derive(Deserialize)]
 pub struct NearQuery {
@@ -237,10 +239,35 @@ async fn near(
 
 async fn refresh_sensor(
     State(state): State<AppState>,
+    AuthUser(_user_id): AuthUser,
     Path(id): Path<String>,
 ) -> ApiResult<Json<RefreshSensorResponse>> {
-    if id.trim().is_empty() {
-        return Err(ApiError::BadRequest("bay id required".into()));
+    validate_refresh_bay_id(&id)?;
+
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM bays WHERE id = $1)")
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await?;
+    if !exists {
+        return Err(ApiError::NotFound);
+    }
+
+    let checked_at = Utc::now();
+    let key = format!("bay:{}:status", id);
+    let mut conn = state.redis.get_multiplexed_async_connection().await?;
+    let previous: Option<String> = conn.get(&key).await?;
+    let previous_payload = previous
+        .as_deref()
+        .and_then(|v| serde_json::from_str::<SensorPayload>(v).ok());
+    if let Some(payload) = previous_payload.as_ref() {
+        let checked_age_secs = (checked_at - payload.fetched_at).num_seconds();
+        if (0..=SENSOR_REFRESH_MIN_INTERVAL_SECS).contains(&checked_age_secs) {
+            return Ok(Json(RefreshSensorResponse {
+                bay_id: id,
+                checked_at,
+                sensor: sensor_info_from_payload(payload, checked_at),
+            }));
+        }
     }
 
     let base = state.com_api_base.as_ref().ok_or_else(|| {
@@ -256,7 +283,6 @@ async fn refresh_sensor(
         );
     }
 
-    let checked_at = Utc::now();
     let payload = SensorPayload {
         status: normalise_status(&record.status_description).to_string(),
         source_updated_at: record.status_timestamp,
@@ -266,32 +292,38 @@ async fn refresh_sensor(
     let value = serde_json::to_string(&payload)
         .map_err(|e| ApiError::Internal(format!("sensor encode: {e}")))?;
 
-    let key = format!("bay:{}:status", id);
-    let mut conn = state.redis.get_multiplexed_async_connection().await?;
-    let previous: Option<String> = conn.get(&key).await?;
-    let previous_payload = previous
-        .as_deref()
-        .and_then(|v| serde_json::from_str::<SensorPayload>(v).ok());
-    let changed = previous_payload.as_ref() != Some(&payload);
+    let changed = previous_payload.as_ref().is_none_or(|p| {
+        p.status != payload.status || p.source_updated_at != payload.source_updated_at
+    });
 
     let _: () = conn.set_ex(&key, &value, REDIS_TTL_SECS).await?;
     if changed {
         let _: () = conn.publish(format!("bay:{id}"), &value).await?;
     }
 
-    let now = Utc::now();
-    let age_secs = (now - payload.source_updated_at).num_seconds();
     Ok(Json(RefreshSensorResponse {
         bay_id: id,
         checked_at,
-        sensor: SensorInfo {
-            status: payload.status,
-            source_updated_at: Some(payload.source_updated_at),
-            fetched_at: Some(payload.fetched_at),
-            fresh: age_secs >= 0 && age_secs <= DEFAULT_MAX_STALE_SECS,
-            age_secs: Some(age_secs),
-        },
+        sensor: sensor_info_from_payload(&payload, checked_at),
     }))
+}
+
+fn validate_refresh_bay_id(id: &str) -> ApiResult<()> {
+    if id.is_empty() || id.len() > MAX_BAY_ID_LEN || !id.chars().all(|c| c.is_ascii_digit()) {
+        return Err(ApiError::BadRequest("invalid bay id".into()));
+    }
+    Ok(())
+}
+
+fn sensor_info_from_payload(payload: &SensorPayload, now: DateTime<Utc>) -> SensorInfo {
+    let age_secs = (now - payload.source_updated_at).num_seconds();
+    SensorInfo {
+        status: payload.status.clone(),
+        source_updated_at: Some(payload.source_updated_at),
+        fetched_at: Some(payload.fetched_at),
+        fresh: (0..=DEFAULT_MAX_STALE_SECS).contains(&age_secs),
+        age_secs: Some(age_secs),
+    }
 }
 
 async fn fetch_com_sensor(
@@ -300,11 +332,7 @@ async fn fetch_com_sensor(
     bay_id: &str,
 ) -> ApiResult<ComSensorRecord> {
     let url = format!("{}/{}/records", base.trim_end_matches('/'), SENSOR_DATASET);
-    let where_expr = if bay_id.chars().all(|c| c.is_ascii_digit()) {
-        format!("kerbsideid={bay_id}")
-    } else {
-        format!("kerbsideid=\"{}\"", bay_id.replace('"', "\\\""))
-    };
+    let where_expr = format!("kerbsideid={bay_id}");
     let mut req = state
         .http
         .get(&url)
