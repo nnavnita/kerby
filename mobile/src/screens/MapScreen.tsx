@@ -101,7 +101,6 @@ export function MapScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [refreshingBayId, setRefreshingBayId] = useState<string | null>(null);
 
   const activeLockBayId = useMemo(
     () => bays.find((b) => b.lock?.mine)?.id ?? null,
@@ -331,25 +330,6 @@ export function MapScreen({
       fetchBays();
     } catch (e: any) {
       Alert.alert('Could not release', e?.message ?? 'unknown');
-    }
-  };
-
-  const refreshBaySensor = async (bay: Bay) => {
-    setRefreshingBayId(bay.id);
-    try {
-      const refreshed = await api.refreshBaySensor(bay.id);
-      const updateBay = (b: Bay) =>
-        b.id === refreshed.bay_id ? { ...b, sensor: refreshed.sensor } : b;
-      setBays((items) => items.map(updateBay));
-      setSelected((current) => (current ? updateBay(current) : current));
-    } catch (e: any) {
-      const message =
-        e?.status === 404
-          ? 'City does not currently publish a live sensor row for this bay.'
-          : e?.message ?? 'unknown';
-      Alert.alert('Could not refresh sensor', message);
-    } finally {
-      setRefreshingBayId(null);
     }
   };
 
@@ -645,18 +625,11 @@ export function MapScreen({
                 {selected.street && <Text style={styles.cardStreet}>{selected.street}</Text>}
                 <Text style={styles.cardMeta}>{selected.distance_m} m away</Text>
                 {selected.sensor ? (
-                  <>
-                    <Text style={styles.cardMeta}>
-                      City reading: {selected.sensor.status}
-                      {selected.sensor.fresh ? '' : ' (stale)'} ·{' '}
-                      {formatAge(selected.sensor.age_secs)}
-                    </Text>
-                    {selected.sensor.fetched_at && (
-                      <Text style={styles.cardMeta}>
-                        Kerby checked: {formatTimestampAge(selected.sensor.fetched_at)}
-                      </Text>
-                    )}
-                  </>
+                  <Text style={styles.cardMeta}>
+                    Sensor: {selected.sensor.status}
+                    {selected.sensor.fresh ? '' : ' (stale)'} ·{' '}
+                    {formatAge(selected.sensor.age_secs)}
+                  </Text>
                 ) : (
                   <Text style={styles.cardMeta}>No sensor coverage</Text>
                 )}
@@ -670,15 +643,6 @@ export function MapScreen({
                   </Text>
                 )}
 
-                <Pressable
-                  style={[styles.refreshSensorBtn, refreshingBayId === selected.id && styles.chipDisabled]}
-                  onPress={() => refreshBaySensor(selected)}
-                  disabled={refreshingBayId === selected.id}
-                >
-                  <Text style={styles.refreshSensorBtnText}>
-                    {refreshingBayId === selected.id ? 'Refreshing sensor...' : 'Refresh sensor'}
-                  </Text>
-                </Pressable>
                 {canTargetBay(selected) && (
                   <Pressable
                     style={styles.navBtn}
@@ -910,13 +874,6 @@ function formatAge(secs?: number): string {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-function formatTimestampAge(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  return formatAge(secs);
-}
-
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.surface.background },
@@ -1094,14 +1051,6 @@ function makeStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     navBtnText: { color: colors.text.inverse, fontWeight: '700', fontSize: 16 },
-    refreshSensorBtn: {
-      marginTop: 12,
-      backgroundColor: colors.surface.pill,
-      padding: 14,
-      borderRadius: 8,
-      alignItems: 'center',
-    },
-    refreshSensorBtnText: { color: colors.text.secondary, fontWeight: '700', fontSize: 16 },
     parkBtn: {
       marginTop: 12,
       backgroundColor: colors.status.success,

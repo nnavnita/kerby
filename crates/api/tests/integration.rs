@@ -4,10 +4,8 @@
 
 use std::sync::Arc;
 
-use chrono::{Duration, Utc};
 use kerby_api::state::AppState;
 use kerby_api::{build_router, live};
-use redis::AsyncCommands;
 use reqwest::StatusCode;
 use serde_json::json;
 
@@ -40,8 +38,6 @@ async fn spawn_test_server() -> (String, AppState) {
         events: events_tx,
         http: reqwest::Client::new(),
         google_maps_key: None,
-        com_api_base: None,
-        com_api_key: None,
         resend_api_key: None,
         email_from: Arc::new("test@example.com".to_string()),
     };
@@ -72,9 +68,7 @@ async fn seed_test_bay(pool: &sqlx::PgPool) {
     sqlx::query(
         r#"
         INSERT INTO bays (id, centroid, road_segment_id, street_name)
-        VALUES
-            ('TEST_BAY_1', ST_MakePoint(144.9633, -37.8140)::geography, 99999, 'Test Street CBD'),
-            ('57940', ST_MakePoint(144.9634, -37.8141)::geography, 99999, 'Test Street CBD')
+        VALUES ('TEST_BAY_1', ST_MakePoint(144.9633, -37.8140)::geography, 99999, 'Test Street CBD')
         ON CONFLICT (id) DO NOTHING
         "#,
     )
@@ -213,82 +207,6 @@ async fn bays_near_shape() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body.get("bays").and_then(|v| v.as_array()).is_some());
     assert!(body.get("count").is_some());
-}
-
-#[tokio::test]
-async fn refresh_sensor_requires_auth() {
-    let (base, _state) = spawn_test_server().await;
-    let resp = reqwest::Client::new()
-        .post(format!("{}/bays/57940/refresh-sensor", base))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn refresh_sensor_rejects_invalid_bay_id() {
-    let (base, _state) = spawn_test_server().await;
-    let email = unique_email();
-    let token = signup(&base, &email).await;
-    let resp = reqwest::Client::new()
-        .post(format!("{}/bays/TEST_BAY_1/refresh-sensor", base))
-        .bearer_auth(&token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn refresh_sensor_rejects_unknown_local_bay() {
-    let (base, _state) = spawn_test_server().await;
-    let email = unique_email();
-    let token = signup(&base, &email).await;
-    let resp = reqwest::Client::new()
-        .post(format!("{}/bays/999999999/refresh-sensor", base))
-        .bearer_auth(&token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn refresh_sensor_uses_recent_cached_check_without_upstream_config() {
-    let (base, state) = spawn_test_server().await;
-    let email = unique_email();
-    let token = signup(&base, &email).await;
-
-    let fetched_at = Utc::now();
-    let source_updated_at = fetched_at - Duration::minutes(90);
-    let cached = json!({
-        "status": "unoccupied",
-        "source_updated_at": source_updated_at,
-        "fetched_at": fetched_at,
-        "zone_number": 7218
-    })
-    .to_string();
-    let mut conn = state
-        .redis
-        .get_multiplexed_async_connection()
-        .await
-        .unwrap();
-    let _: () = conn.set_ex("bay:57940:status", cached, 3600).await.unwrap();
-
-    // Test AppState intentionally has COM_API_BASE unset. A 200 here proves
-    // the endpoint returned the recent cached check instead of calling CoM.
-    let resp = reqwest::Client::new()
-        .post(format!("{}/bays/57940/refresh-sensor", base))
-        .bearer_auth(&token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["bay_id"], "57940");
-    assert_eq!(body["sensor"]["status"], "unoccupied");
-    assert!(body["sensor"]["age_secs"].as_i64().unwrap() >= 90 * 60);
 }
 
 #[tokio::test]

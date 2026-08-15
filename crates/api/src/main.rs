@@ -38,17 +38,6 @@ async fn main() -> anyhow::Result<()> {
     if google_maps_key.is_none() {
         tracing::warn!("GOOGLE_MAPS_KEY not set; /geocode will return errors");
     }
-    let com_api_base = std::env::var("COM_API_BASE")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(Arc::new);
-    let com_api_key = std::env::var("COM_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(Arc::new);
-    if com_api_base.is_none() {
-        tracing::warn!("COM_API_BASE not set; per-bay sensor refresh will return errors");
-    }
 
     let resend_api_key = std::env::var("RESEND_API_KEY")
         .ok()
@@ -78,8 +67,6 @@ async fn main() -> anyhow::Result<()> {
         events: events_tx,
         http,
         google_maps_key,
-        com_api_base,
-        com_api_key,
         resend_api_key,
         email_from,
     };

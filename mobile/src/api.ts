@@ -186,12 +186,6 @@ export type NearResponse = {
   bays: Bay[];
 };
 
-export type RefreshSensorResponse = {
-  bay_id: string;
-  checked_at: string;
-  sensor: SensorInfo;
-};
-
 export type SessionDto = {
   id: string;
   bay_id: string | null;
@@ -265,10 +259,6 @@ export const api = {
     if (opts.limit != null) qs.set('limit', String(opts.limit));
     return request<NearResponse>(`/bays/near?${qs.toString()}`);
   },
-  refreshBaySensor: (bayId: string) =>
-    request<RefreshSensorResponse>(`/bays/${encodeURIComponent(bayId)}/refresh-sensor`, {
-      method: 'POST',
-    }),
   createSession: (body: {
     bay_id?: string | null;
     lat: number;
