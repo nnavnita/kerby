@@ -503,6 +503,23 @@ targets:
     - data
     origin: manual
     discovered: 2026-08-14
+  T23:
+    name: Proper deep-link / universal-link strategy for kerby:// once app leaves Expo Go beta
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - App is on a standalone or dev-client build (not Expo Go) with iOS associated domains / Android App Links configured for kerby-api.fly.dev
+    - kerby:// inbound links (share, reset-password, verify-email) actually open the app on a real device without the web-fallback intermediary
+    - Web-fallback pages (added as a stopgap for T6.1/T6.2) can be simplified or removed once native interception works, or kept permanently as a no-app-installed fallback
+    context: 'T6.1/T6.2''s final review found kerby:// custom-scheme links are unreachable while the app ships via Expo Go (expo-linking''s parse() returns null hostname for Expo-hosted URL forms, and Expo Go doesn''t register custom schemes at all). Same pre-existing gap affects T3.3''s share links. Stopgap fix: route password-reset/email-verification through server-rendered web pages instead of relying on the deep link (see 2026-08-16 web-fallback work). This target tracks doing it properly once the app has a standalone/dev-client distribution path (ties to the WAU>50 gate already used for T3.4/T5''s CarPlay decisions).'
+    tags:
+    - phase-1.6
+    - auth
+    - mobile
+    - deferred
+    origin: manual
+    discovered: 2026-08-15
   T3:
     name: 'Phase 3: Enhancements (saved destinations, paid lots, sharing, CarPlay)'
     status: converging
