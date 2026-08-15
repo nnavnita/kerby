@@ -40,6 +40,8 @@ const MELBOURNE_CBD: Region = {
 
 const REFRESH_MS = 15_000;
 const STREET_SPOT_LATITUDE_DELTA = 0.0035;
+const STREET_SPOT_BAY_LIMIT = 50;
+const STREET_SPOT_IDLE_MS = 1_200;
 
 type Filters = {
   availableOnly: boolean;
@@ -83,6 +85,8 @@ export function MapScreen({
   const [resendBusy, setResendBusy] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streetSpotIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streetSpotRenderReadyRef = useRef(false);
 
   const [region, setRegion] = useState<Region>(MELBOURNE_CBD);
   const [target, setTarget] = useState<Target | null>(null);
@@ -101,6 +105,7 @@ export function MapScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [streetSpotRenderReady, setStreetSpotRenderReady] = useState(false);
 
   const activeLockBayId = useMemo(
     () => bays.find((b) => b.lock?.mine)?.id ?? null,
@@ -115,7 +120,37 @@ export function MapScreen({
         : { lat: region.latitude, lng: region.longitude },
     [target, region.latitude, region.longitude],
   );
-  const streetSpotMode = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
+  const regionIsStreetSpotZoom = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
+  const streetSpotMode = regionIsStreetSpotZoom && streetSpotRenderReady;
+
+  const setStreetSpotReady = useCallback((ready: boolean) => {
+    streetSpotRenderReadyRef.current = ready;
+    setStreetSpotRenderReady(ready);
+  }, []);
+
+  const clearStreetSpotIdle = useCallback(() => {
+    if (streetSpotIdleTimer.current) {
+      clearTimeout(streetSpotIdleTimer.current);
+      streetSpotIdleTimer.current = null;
+    }
+    if (streetSpotRenderReadyRef.current) {
+      setStreetSpotReady(false);
+    }
+  }, [setStreetSpotReady]);
+
+  const handleRegionChangeComplete = useCallback(
+    (nextRegion: Region) => {
+      setRegion(nextRegion);
+      clearStreetSpotIdle();
+      if (nextRegion.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA) {
+        streetSpotIdleTimer.current = setTimeout(() => {
+          setStreetSpotReady(true);
+          streetSpotIdleTimer.current = null;
+        }, STREET_SPOT_IDLE_MS);
+      }
+    },
+    [clearStreetSpotIdle, setStreetSpotReady],
+  );
 
   const fetchBays = useCallback(async () => {
     setLoading(true);
@@ -125,7 +160,7 @@ export function MapScreen({
         lng: searchCentre.lng,
         radius_m: Math.max(filters.maxWalkM, 150),
         available_only: filters.availableOnly && !streetSpotMode,
-        limit: streetSpotMode ? 500 : undefined,
+        limit: streetSpotMode ? STREET_SPOT_BAY_LIMIT : undefined,
       });
       // Apply the client-side "hide no-sensor bays" filter — the backend already
       // enforces available_only and radius.
@@ -276,6 +311,12 @@ export function MapScreen({
       if (searchDebounce.current) clearTimeout(searchDebounce.current);
     };
   }, [searchQuery, runSearch]);
+
+  useEffect(() => {
+    return () => {
+      if (streetSpotIdleTimer.current) clearTimeout(streetSpotIdleTimer.current);
+    };
+  }, []);
 
   const applySearchResult = (r: GeocodeResult) => {
     const shortLabel = r.label.split(',').slice(0, 2).join(',');
@@ -455,7 +496,8 @@ export function MapScreen({
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={region}
-        onRegionChangeComplete={setRegion}
+        onRegionChange={clearStreetSpotIdle}
+        onRegionChangeComplete={handleRegionChangeComplete}
         showsUserLocation
         showsMyLocationButton
         userInterfaceStyle={scheme}
