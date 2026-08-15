@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { storage } from './storage';
 
 const API_BASE: string =
   (Constants.expoConfig?.extra as any)?.apiBase ?? 'http://localhost:8080';
@@ -13,29 +14,97 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
+async function rawRequest<T>(
   path: string,
-  opts: { method?: string; token?: string | null; body?: Json } = {},
+  opts: { method?: string; body?: Json; accessToken?: string | null } = {},
 ): Promise<T> {
-  const { method = 'GET', token, body } = opts;
+  const { method = 'GET', body, accessToken } = opts;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const resp = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await resp.text();
-  const parsed = text ? JSON.parse(text) : null;
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
   if (!resp.ok) {
-    const msg = (parsed && (parsed as any).error) || resp.statusText;
+    const msg = (parsed as any)?.error || text || resp.statusText;
     throw new ApiError(resp.status, msg);
   }
   return parsed as T;
 }
 
+// Concurrent 401s (e.g. MapScreen's 15s poll firing alongside a WS-triggered
+// lock call) must share one in-flight refresh instead of each firing their
+// own /auth/refresh — refresh tokens are single-use, so a second concurrent
+// call would see the first call's already-rotated-away token and fail.
+let refreshPromise: Promise<string | null> | null = null;
+
+// Fired only when the server actively rejects a refresh token (expired,
+// revoked, or reuse-detected) — not on transient network failures. Lets
+// App.tsx sign the user out when a session is permanently gone.
+let onAuthLost: (() => void) | null = null;
+export function setOnAuthLost(handler: (() => void) | null): void {
+  onAuthLost = handler;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const refreshToken = await storage.getRefreshToken();
+  if (!refreshToken) return null;
+  try {
+    const resp = await rawRequest<AuthResponse>('/auth/refresh', {
+      method: 'POST',
+      body: { refresh_token: refreshToken },
+    });
+    await storage.setTokens(resp.access_token, resp.refresh_token, resp.user_id);
+    return resp.access_token;
+  } catch (e) {
+    if (e instanceof ApiError) {
+      // The server actively rejected this refresh token (expired, revoked,
+      // or reuse-detected) — this session is permanently gone, not a
+      // transient network blip. Let the app know so it can sign out.
+      onAuthLost?.();
+    }
+    return null;
+  }
+}
+
+async function request<T>(
+  path: string,
+  opts: { method?: string; body?: Json; auth?: boolean; retryOn401?: boolean } = {},
+): Promise<T> {
+  const { method = 'GET', body, auth = true, retryOn401 = true } = opts;
+  if (!auth) {
+    return rawRequest<T>(path, { method, body });
+  }
+  const accessToken = await storage.getAccessToken();
+  try {
+    return await rawRequest<T>(path, { method, body, accessToken });
+  } catch (e) {
+    if (retryOn401 && e instanceof ApiError && e.status === 401) {
+      if (!refreshPromise) {
+        refreshPromise = refreshAccessToken().finally(() => {
+          refreshPromise = null;
+        });
+      }
+      const newToken = await refreshPromise;
+      if (newToken) {
+        return rawRequest<T>(path, { method, body, accessToken: newToken });
+      }
+    }
+    throw e;
+  }
+}
+
 export type AuthResponse = {
-  token: string;
+  access_token: string;
+  refresh_token: string;
   user_id: string;
   expires_at: string;
 };
@@ -136,19 +205,57 @@ export type SessionDto = {
 
 export const api = {
   signup: (email: string, password: string) =>
-    request<AuthResponse>('/auth/signup', { method: 'POST', body: { email, password } }),
+    request<AuthResponse>('/auth/signup', {
+      method: 'POST',
+      body: { email, password },
+      auth: false,
+    }),
   login: (email: string, password: string) =>
-    request<AuthResponse>('/auth/login', { method: 'POST', body: { email, password } }),
-  baysNear: (
-    opts: {
-      lat: number;
-      lng: number;
-      radius_m: number;
-      available_only: boolean;
-      limit?: number;
-    },
-    token?: string,
-  ) => {
+    request<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: { email, password },
+      auth: false,
+    }),
+  logout: (refreshToken: string) =>
+    request<{ ok: true }>('/auth/logout', {
+      method: 'POST',
+      body: { refresh_token: refreshToken },
+      auth: false,
+    }),
+  forgotPassword: (email: string) =>
+    request<{ ok: true }>('/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+      auth: false,
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ ok: true }>('/auth/reset-password', {
+      method: 'POST',
+      body: { token, new_password: newPassword },
+      auth: false,
+    }),
+  verifyEmail: (token: string) =>
+    request<{ ok: true }>('/auth/verify-email', {
+      method: 'POST',
+      body: { token },
+      auth: false,
+    }),
+  resendVerification: () =>
+    request<{ ok: true }>('/auth/resend-verification', { method: 'POST' }),
+  getMe: () => request<{ email_verified: boolean }>('/users/me'),
+  deleteAccount: (password: string) =>
+    request<{ ok: true }>('/users/delete-account', {
+      method: 'POST',
+      body: { password },
+      retryOn401: false,
+    }),
+  baysNear: (opts: {
+    lat: number;
+    lng: number;
+    radius_m: number;
+    available_only: boolean;
+    limit?: number;
+  }) => {
     const qs = new URLSearchParams({
       lat: String(opts.lat),
       lng: String(opts.lng),
@@ -156,49 +263,43 @@ export const api = {
       available_only: String(opts.available_only),
     });
     if (opts.limit != null) qs.set('limit', String(opts.limit));
-    return request<NearResponse>(`/bays/near?${qs.toString()}`, { token });
+    return request<NearResponse>(`/bays/near?${qs.toString()}`);
   },
-  refreshBaySensor: (bayId: string, token?: string) =>
+  refreshBaySensor: (bayId: string) =>
     request<RefreshSensorResponse>(`/bays/${encodeURIComponent(bayId)}/refresh-sensor`, {
       method: 'POST',
-      token,
     }),
-  createSession: (
-    token: string,
-    body: { bay_id?: string | null; lat: number; lng: number; note?: string | null },
-  ) => request<SessionDto>('/sessions', { method: 'POST', token, body }),
-  currentSession: (token: string) =>
-    request<SessionDto | null>('/sessions/current', { token }),
-  returnSession: (token: string, id: string) =>
-    request<SessionDto>(`/sessions/${id}/return`, { method: 'POST', token }),
+  createSession: (body: {
+    bay_id?: string | null;
+    lat: number;
+    lng: number;
+    note?: string | null;
+  }) => request<SessionDto>('/sessions', { method: 'POST', body }),
+  currentSession: () => request<SessionDto | null>('/sessions/current'),
+  returnSession: (id: string) =>
+    request<SessionDto>(`/sessions/${id}/return`, { method: 'POST' }),
 
-  createLock: (token: string, bay_id: string) =>
-    request<LockDto>('/locks', { method: 'POST', token, body: { bay_id } }),
-  currentLock: (token: string) =>
-    request<LockDto | null>('/locks/current', { token }),
-  releaseLock: (token: string, id: string) =>
-    request<LockDto>(`/locks/${id}`, { method: 'DELETE', token }),
-  extendLock: (token: string, id: string, lat: number, lng: number) =>
+  createLock: (bay_id: string) =>
+    request<LockDto>('/locks', { method: 'POST', body: { bay_id } }),
+  currentLock: () => request<LockDto | null>('/locks/current'),
+  releaseLock: (id: string) =>
+    request<LockDto>(`/locks/${id}`, { method: 'DELETE' }),
+  extendLock: (id: string, lat: number, lng: number) =>
     request<LockDto>(`/locks/${id}/extend`, {
       method: 'POST',
-      token,
       body: { lat, lng },
     }),
 
-  listDestinations: (token: string) =>
-    request<Destination[]>('/destinations', { token }),
-  saveDestination: (
-    token: string,
-    body: {
-      name: string;
-      lat: number;
-      lng: number;
-      walk_radius_m?: number;
-      available_only?: boolean;
-    },
-  ) => request<Destination>('/destinations', { method: 'POST', token, body }),
-  deleteDestination: (token: string, id: string) =>
-    request<{ ok: true }>(`/destinations/${id}`, { method: 'DELETE', token }),
+  listDestinations: () => request<Destination[]>('/destinations'),
+  saveDestination: (body: {
+    name: string;
+    lat: number;
+    lng: number;
+    walk_radius_m?: number;
+    available_only?: boolean;
+  }) => request<Destination>('/destinations', { method: 'POST', body }),
+  deleteDestination: (id: string) =>
+    request<{ ok: true }>(`/destinations/${id}`, { method: 'DELETE' }),
 
   lotsNear: (opts: { lat: number; lng: number; radius_m?: number }) => {
     const qs = new URLSearchParams({
@@ -209,10 +310,9 @@ export const api = {
     return request<Lot[]>(`/lots/near?${qs.toString()}`);
   },
 
-  setPushToken: (token: string, expoToken: string | null) =>
+  setPushToken: (expoToken: string | null) =>
     request<{ ok: true }>('/users/push-token', {
       method: 'POST',
-      token,
       body: { token: expoToken },
     }),
 

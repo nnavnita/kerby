@@ -13,7 +13,6 @@ primary_region = "syd"
 [env]
   BIND_ADDR = "0.0.0.0:8080"
   RUST_LOG = "kerby_api=info,tower_http=info,info"
-  JWT_TTL_SECS = "2592000"
   COM_API_BASE = "https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets"
 
 [http_service]

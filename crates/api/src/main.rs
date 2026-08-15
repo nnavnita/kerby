@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 use kerby_api::state::AppState;
-use kerby_api::{build_router, live, DEFAULT_JWT_TTL_SECS};
+use kerby_api::{build_router, live, DEFAULT_ACCESS_TOKEN_TTL_SECS};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let jwt_ttl_secs: i64 = std::env::var("JWT_TTL_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_JWT_TTL_SECS);
+        .unwrap_or(DEFAULT_ACCESS_TOKEN_TTL_SECS);
 
     let db = sqlx::PgPool::connect(&db_url).await?;
     sqlx::migrate!("../../migrations").run(&db).await?;
@@ -50,6 +50,17 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("COM_API_BASE not set; per-bay sensor refresh will return errors");
     }
 
+    let resend_api_key = std::env::var("RESEND_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(Arc::new);
+    if resend_api_key.is_none() {
+        tracing::warn!("RESEND_API_KEY not set; password reset/verification emails will not send");
+    }
+    let email_from = Arc::new(
+        std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Kerby <noreply@kerby.app>".to_string()),
+    );
+
     // Force outbound over IPv4 so upstream IP allowlists (e.g. the Google
     // Maps key restriction) see the same address the operator whitelisted.
     // Dual-stack hosts otherwise randomly egress over IPv6.
@@ -69,6 +80,8 @@ async fn main() -> anyhow::Result<()> {
         google_maps_key,
         com_api_base,
         com_api_key,
+        resend_api_key,
+        email_from,
     };
 
     let app = build_router(state, true);

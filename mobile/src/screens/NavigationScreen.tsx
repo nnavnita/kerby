@@ -20,6 +20,9 @@ import {
 } from '../api';
 import { distanceToPolyline, haversineMeters } from '../geo';
 import { decodePolyline, LatLng } from '../polyline';
+import { ThemeColors } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
+import { DARK_MAP_STYLE } from '../theme/mapStyle';
 
 const OFF_ROUTE_METERS = 40;
 const OFF_ROUTE_HOLD_MS = 5_000;
@@ -27,7 +30,6 @@ const ARRIVAL_METERS = 25;
 const STEP_ADVANCE_METERS = 20;
 
 type Props = {
-  token: string;
   target: {
     bay: Bay;
   };
@@ -35,7 +37,9 @@ type Props = {
   onArrived: () => void;
 };
 
-export function NavigationScreen({ token, target, onCancel, onArrived }: Props) {
+export function NavigationScreen({ target, onCancel, onArrived }: Props) {
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const mapRef = useRef<MapView>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const spokenSteps = useRef<Set<number>>(new Set());
@@ -252,6 +256,8 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
         style={StyleSheet.absoluteFill}
         showsUserLocation
         showsCompass
+        userInterfaceStyle={scheme}
+        customMapStyle={scheme === 'dark' ? DARK_MAP_STYLE : []}
         initialRegion={{
           latitude: destination.lat,
           longitude: destination.lng,
@@ -262,13 +268,13 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
         {decodedPoly.length > 0 && (
           <Polyline
             coordinates={decodedPoly}
-            strokeColor="#1E88E5"
+            strokeColor={colors.brand.primary}
             strokeWidth={6}
           />
         )}
         <Marker
           coordinate={{ latitude: destination.lat, longitude: destination.lng }}
-          pinColor="#2E7D32"
+          pinColor={colors.status.success}
           title={destination.label}
         />
       </MapView>
@@ -276,7 +282,7 @@ export function NavigationScreen({ token, target, onCancel, onArrived }: Props) 
       <View style={styles.instructionCard}>
         {loadingRoute ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.brand.primaryText} />
             <Text style={styles.instructionText}>Getting directions…</Text>
           </View>
         ) : currentInstruction ? (
@@ -338,50 +344,55 @@ function formatManeuver(raw: string): string {
   return raw.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase());
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  instructionCard: {
-    position: 'absolute',
-    top: 44,
-    left: 12,
-    right: 12,
-    backgroundColor: '#1E88E5',
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-    gap: 4,
-  },
-  maneuver: { color: '#fff', fontSize: 14, fontWeight: '600', opacity: 0.85 },
-  instructionText: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  instructionMeta: { color: '#fff', fontSize: 14, opacity: 0.85 },
-  errorText: { color: '#fff', fontSize: 14 },
-  loadingRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  footerBar: {
-    position: 'absolute',
-    bottom: 24,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#fff',
-    padding: 14,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  destinationLabel: { fontSize: 15, fontWeight: '700' },
-  footerMeta: { fontSize: 13, color: '#666', marginTop: 2 },
-  cancelBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#C62828',
-    borderRadius: 8,
-  },
-  cancelBtnText: { color: '#fff', fontWeight: '700' },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    // Always a dark, map-filling surface regardless of theme — the map
+    // itself covers the screen, so this is only visible for an instant
+    // before the first frame renders.
+    container: { flex: 1, backgroundColor: '#000' },
+    instructionCard: {
+      position: 'absolute',
+      top: 44,
+      left: 12,
+      right: 12,
+      backgroundColor: colors.brand.primary,
+      padding: 16,
+      borderRadius: 12,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
+      gap: 4,
+    },
+    maneuver: { color: colors.brand.primaryText, fontSize: 14, fontWeight: '600', opacity: 0.85 },
+    instructionText: { color: colors.brand.primaryText, fontSize: 18, fontWeight: '600' },
+    instructionMeta: { color: colors.brand.primaryText, fontSize: 14, opacity: 0.85 },
+    errorText: { color: colors.brand.primaryText, fontSize: 14 },
+    loadingRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+    footerBar: {
+      position: 'absolute',
+      bottom: 24,
+      left: 12,
+      right: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: colors.surface.card,
+      padding: 14,
+      borderRadius: 12,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    destinationLabel: { fontSize: 15, fontWeight: '700', color: colors.text.primary },
+    footerMeta: { fontSize: 13, color: colors.text.tertiary, marginTop: 2 },
+    cancelBtn: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      backgroundColor: colors.status.danger,
+      borderRadius: 8,
+    },
+    cancelBtnText: { color: colors.brand.primaryText, fontWeight: '700' },
+  });
+}

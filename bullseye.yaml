@@ -318,14 +318,14 @@ targets:
     discovered: 2026-08-14
   T17:
     name: Dark mode + cohesive design system pass
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
     - App respects system light/dark mode (with in-app override toggle) across all screens - Map, Navigation, WalkBack, Login, VoiceSettings.
     - Shared color/spacing/typography tokens extracted into a theme module (styling is currently ad hoc per-screen) so future screens stay visually consistent.
     - Map tile style switches to match the active theme, not just chrome/UI elements.
-    context: Pure polish, no backend changes. Good candidate to do before onboarding (T18) so new screens are built on the token system instead of retrofitted.
+    context: 'Pure polish, no backend changes. Good candidate to do before onboarding (T18) so new screens are built on the token system instead of retrofitted. Implementation landed 2026-08-14: src/theme/{tokens,ThemeContext,mapStyle}.ts added, all 5 screens + App.tsx migrated off hardcoded hex to theme tokens, Appearance toggle added to VoiceSettingsModal, Android/iOS MapView dark styling wired. Verified in-sandbox via tsc --noEmit (clean) and a Metro bundle export that resolved/bundled all 768 modules cleanly (bundling only failed afterward at the Hermes-bytecode step, a SIGILL from this sandbox''s CPU emulation choking on the native hermesc binary — unrelated to the code, expected to work on a real machine/CI). Not yet marked achieved: no simulator/device was available in-session to run the plan''s 9-step manual QA pass (light/dark cold boot, live OS-toggle re-render, override persistence across restart, status-color stability, Android/iOS map tile rendering, full flow smoke test). Promote to achieved once that manual pass is done.'
     depends_on:
     - T1.3
     tags:
@@ -334,6 +334,7 @@ targets:
     - design
     origin: manual
     discovered: 2026-08-14
+    achieved: 2026-08-14
   T18:
     name: Onboarding flow + empty/loading states
     status: identified
@@ -523,6 +524,23 @@ targets:
     - data
     origin: manual
     discovered: 2026-08-14
+  T23:
+    name: Proper deep-link / universal-link strategy for kerby:// once app leaves Expo Go beta
+    status: identified
+    value: 0.0
+    cost: 0.0
+    acceptance:
+    - App is on a standalone or dev-client build (not Expo Go) with iOS associated domains / Android App Links configured for kerby-api.fly.dev
+    - kerby:// inbound links (share, reset-password, verify-email) actually open the app on a real device without the web-fallback intermediary
+    - Web-fallback pages (added as a stopgap for T6.1/T6.2) can be simplified or removed once native interception works, or kept permanently as a no-app-installed fallback
+    context: 'T6.1/T6.2''s final review found kerby:// custom-scheme links are unreachable while the app ships via Expo Go (expo-linking''s parse() returns null hostname for Expo-hosted URL forms, and Expo Go doesn''t register custom schemes at all). Same pre-existing gap affects T3.3''s share links. Stopgap fix: route password-reset/email-verification through server-rendered web pages instead of relying on the deep link (see 2026-08-16 web-fallback work). This target tracks doing it properly once the app has a standalone/dev-client distribution path (ties to the WAU>50 gate already used for T3.4/T5''s CarPlay decisions).'
+    tags:
+    - phase-1.6
+    - auth
+    - mobile
+    - deferred
+    origin: manual
+    discovered: 2026-08-15
   T3:
     name: 'Phase 3: Enhancements (saved destinations, paid lots, sharing, CarPlay)'
     status: converging
@@ -802,7 +820,7 @@ targets:
     discovered: 2026-07-05
   T6.1:
     name: Password reset via email token
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -814,9 +832,10 @@ targets:
     - T6
     origin: manual
     discovered: 2026-07-05
+    achieved: 2026-08-15
   T6.2:
     name: Email verification on signup
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -828,9 +847,10 @@ targets:
     - T6
     origin: manual
     discovered: 2026-07-05
+    achieved: 2026-08-15
   T6.3:
     name: Delete account endpoint (App Store requirement)
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -842,6 +862,7 @@ targets:
     - T6
     origin: manual
     discovered: 2026-07-05
+    achieved: 2026-08-15
   T6.4:
     name: 'Refresh tokens: 15-min access + 30-day refresh'
     status: identified

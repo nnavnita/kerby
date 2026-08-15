@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,11 +12,15 @@ import {
 } from 'react-native';
 import { api } from '../api';
 import { storage } from '../storage';
+import { ThemeColors } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
 
-type Props = { onSignedIn: (token: string) => void };
+type Props = { onSignedIn: () => void };
 
 export function LoginScreen({ onSignedIn }: Props) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -26,14 +30,60 @@ export function LoginScreen({ onSignedIn }: Props) {
     try {
       const resp =
         mode === 'login' ? await api.login(email, password) : await api.signup(email, password);
-      await storage.setToken(resp.token, resp.user_id);
-      onSignedIn(resp.token);
+      await storage.setTokens(resp.access_token, resp.refresh_token, resp.user_id);
+      onSignedIn();
     } catch (e: any) {
       Alert.alert('Sign-in failed', e?.message ?? 'unknown error');
     } finally {
       setBusy(false);
     }
   };
+
+  const submitForgotPassword = async () => {
+    setBusy(true);
+    try {
+      await api.forgotPassword(email);
+      Alert.alert(
+        'Check your email',
+        'If that email has an account, a reset link is on its way.',
+      );
+      setMode('login');
+    } catch (e: any) {
+      Alert.alert('Something went wrong', e?.message ?? 'unknown error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (mode === 'forgot') {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Text style={styles.title}>Kerby</Text>
+        <Text style={styles.subtitle}>Reset your password</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <Pressable style={styles.button} disabled={busy} onPress={submitForgotPassword}>
+          {busy ? (
+            <ActivityIndicator color={colors.brand.primaryText} />
+          ) : (
+            <Text style={styles.buttonText}>Send reset link</Text>
+          )}
+        </Pressable>
+        <Pressable onPress={() => setMode('login')}>
+          <Text style={styles.switch}>Back to sign in</Text>
+        </Pressable>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -61,13 +111,18 @@ export function LoginScreen({ onSignedIn }: Props) {
       />
       <Pressable style={styles.button} disabled={busy} onPress={submit}>
         {busy ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.brand.primaryText} />
         ) : (
           <Text style={styles.buttonText}>
             {mode === 'login' ? 'Sign in' : 'Create account'}
           </Text>
         )}
       </Pressable>
+      {mode === 'login' && (
+        <Pressable onPress={() => setMode('forgot')}>
+          <Text style={styles.switch}>Forgot password?</Text>
+        </Pressable>
+      )}
       <Pressable onPress={() => setMode(mode === 'login' ? 'signup' : 'login')}>
         <Text style={styles.switch}>
           {mode === 'login' ? 'New here? Create account' : 'Already have an account? Sign in'}
@@ -77,25 +132,28 @@ export function LoginScreen({ onSignedIn }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center' },
-  title: { fontSize: 40, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 24, opacity: 0.7 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d0d0d0',
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  button: {
-    backgroundColor: '#1E88E5',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  switch: { color: '#1E88E5', textAlign: 'center', marginTop: 16 },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: colors.surface.background },
+    title: { fontSize: 40, fontWeight: '700', textAlign: 'center', marginBottom: 4, color: colors.text.primary },
+    subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 24, opacity: 0.7, color: colors.text.primary },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border.default,
+      borderRadius: 8,
+      padding: 14,
+      marginBottom: 12,
+      fontSize: 16,
+      color: colors.text.primary,
+    },
+    button: {
+      backgroundColor: colors.brand.primary,
+      padding: 16,
+      borderRadius: 8,
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    buttonText: { color: colors.brand.primaryText, fontSize: 16, fontWeight: '600' },
+    switch: { color: colors.brand.primary, textAlign: 'center', marginTop: 16 },
+  });
+}

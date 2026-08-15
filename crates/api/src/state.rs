@@ -14,4 +14,6 @@ pub struct AppState {
     pub google_maps_key: Option<Arc<String>>,
     pub com_api_base: Option<Arc<String>>,
     pub com_api_key: Option<Arc<String>>,
+    pub resend_api_key: Option<Arc<String>>,
+    pub email_from: Arc<String>,
 }

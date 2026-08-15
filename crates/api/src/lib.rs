@@ -6,15 +6,20 @@ pub mod auth;
 pub mod bays;
 pub mod destinations;
 pub mod directions;
+pub mod email;
+pub mod email_tokens;
+pub mod email_verify;
 pub mod error;
 pub mod geocode;
 pub mod legal;
 pub mod live;
 pub mod locks;
 pub mod lots;
+pub mod password_reset;
 pub mod sessions;
 pub mod share;
 pub mod state;
+pub mod tokens;
 pub mod users;
 
 use std::sync::Arc;
@@ -62,7 +67,16 @@ fn request_id_header(request_id: Option<&RequestId>) -> String {
         .to_string()
 }
 
-pub const DEFAULT_JWT_TTL_SECS: i64 = 30 * 24 * 60 * 60;
+/// Access token TTL. Short-lived by design — session continuity comes from
+/// the refresh token (see `auth.rs`), not from a long-lived JWT.
+pub const DEFAULT_ACCESS_TOKEN_TTL_SECS: i64 = 15 * 60;
+
+/// Base URL for server-rendered pages linked from emails (password reset,
+/// email verification). Deliberately a plain https:// URL, not the
+/// `kerby://` app scheme — Expo Go (the current beta distribution channel)
+/// cannot intercept custom schemes at all, so a real web page is the only
+/// link that works for every current tester. See bullseye T23.
+pub const WEB_BASE: &str = "https://kerby-api.fly.dev";
 
 pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
     let mut public_read = Router::new()
@@ -71,7 +85,11 @@ pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
         .merge(share::routes())
         .merge(geocode::routes())
         .merge(directions::routes());
-    let mut auth_gated = Router::new().merge(auth::routes());
+    let mut auth_gated = Router::new()
+        .merge(auth::routes())
+        .merge(password_reset::routes())
+        .merge(email_verify::routes())
+        .merge(users::rate_limited_routes());
 
     if with_rate_limit {
         let public_gov = Arc::new(

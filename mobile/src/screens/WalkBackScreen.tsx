@@ -1,15 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import { SessionDto, api } from '../api';
+import { ThemeColors } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = {
-  token: string;
   session: SessionDto;
   onReturned: () => void;
 };
 
-export function WalkBackScreen({ token, session, onReturned }: Props) {
+export function WalkBackScreen({ session, onReturned }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [me, setMe] = useState<{ lat: number; lng: number } | null>(null);
   const [bearing, setBearing] = useState<number | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
@@ -37,7 +40,7 @@ export function WalkBackScreen({ token, session, onReturned }: Props) {
 
   const markReturned = async () => {
     try {
-      await api.returnSession(token, session.id);
+      await api.returnSession(session.id);
       onReturned();
     } catch (e: any) {
       Alert.alert('Could not mark returned', e?.message ?? 'unknown');
@@ -98,29 +101,37 @@ function bearingDeg(lat1: number, lng1: number, lat2: number, lng2: number): num
   return (θ * 180) / Math.PI;
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  note: { fontSize: 14, opacity: 0.75, marginBottom: 24, textAlign: 'center' },
-  compassWrap: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 2,
-    borderColor: '#1E88E5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  arrow: { width: 100, height: 100, alignItems: 'center', justifyContent: 'center' },
-  arrowSymbol: { fontSize: 80, color: '#1E88E5' },
-  distance: { fontSize: 48, fontWeight: '700', marginBottom: 8 },
-  hint: { fontSize: 14, opacity: 0.6, marginBottom: 24 },
-  doneBtn: {
-    backgroundColor: '#1E88E5',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 8,
-  },
-  doneBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface.background,
+    },
+    title: { fontSize: 24, fontWeight: '700', marginBottom: 8, color: colors.text.primary },
+    note: { fontSize: 14, opacity: 0.75, marginBottom: 24, textAlign: 'center', color: colors.text.primary },
+    compassWrap: {
+      width: 200,
+      height: 200,
+      borderRadius: 100,
+      borderWidth: 2,
+      borderColor: colors.brand.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 24,
+    },
+    arrow: { width: 100, height: 100, alignItems: 'center', justifyContent: 'center' },
+    arrowSymbol: { fontSize: 80, color: colors.brand.primary },
+    distance: { fontSize: 48, fontWeight: '700', marginBottom: 8, color: colors.text.primary },
+    hint: { fontSize: 14, opacity: 0.6, marginBottom: 24, color: colors.text.primary },
+    doneBtn: {
+      backgroundColor: colors.brand.primary,
+      paddingHorizontal: 32,
+      paddingVertical: 16,
+      borderRadius: 8,
+    },
+    doneBtnText: { color: colors.brand.primaryText, fontSize: 16, fontWeight: '600' },
+  });
+}

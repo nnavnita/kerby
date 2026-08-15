@@ -25,7 +25,11 @@ import {
   openLiveStream,
 } from '../api';
 import { storage } from '../storage';
+import { AccountModal } from './AccountModal';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
+import { ThemeColors } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
+import { DARK_MAP_STYLE } from '../theme/mapStyle';
 
 const MELBOURNE_CBD: Region = {
   latitude: -37.814,
@@ -52,7 +56,8 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 type Props = {
-  token: string;
+  emailVerified: boolean;
+  onResendVerification: () => Promise<{ ok: true }>;
   onSignedOut: () => void;
   onSessionSaved: () => void;
   onStartNav: (bay: Bay) => void;
@@ -65,12 +70,17 @@ type Target = {
 };
 
 export function MapScreen({
-  token,
+  emailVerified,
+  onResendVerification,
   onSignedOut,
   onSessionSaved,
   onStartNav,
 }: Props) {
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const mapRef = useRef<MapView>(null);
+  const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -86,6 +96,7 @@ export function MapScreen({
   const [destModalOpen, setDestModalOpen] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [voiceModalOpen, setVoiceModalOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [newDestName, setNewDestName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
@@ -110,16 +121,13 @@ export function MapScreen({
   const fetchBays = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await api.baysNear(
-        {
-          lat: searchCentre.lat,
-          lng: searchCentre.lng,
-          radius_m: Math.max(filters.maxWalkM, 150),
-          available_only: filters.availableOnly && !streetSpotMode,
-          limit: streetSpotMode ? 500 : undefined,
-        },
-        token,
-      );
+      const resp = await api.baysNear({
+        lat: searchCentre.lat,
+        lng: searchCentre.lng,
+        radius_m: Math.max(filters.maxWalkM, 150),
+        available_only: filters.availableOnly && !streetSpotMode,
+        limit: streetSpotMode ? 500 : undefined,
+      });
       // Apply the client-side "hide no-sensor bays" filter — the backend already
       // enforces available_only and radius.
       const filtered = filters.includeNoSensor
@@ -131,7 +139,7 @@ export function MapScreen({
     } finally {
       setLoading(false);
     }
-  }, [searchCentre.lat, searchCentre.lng, filters, streetSpotMode, token]);
+  }, [searchCentre.lat, searchCentre.lng, filters, streetSpotMode]);
 
   const fetchLots = useCallback(async () => {
     if (!filters.includeLots) {
@@ -157,11 +165,11 @@ export function MapScreen({
 
   const refreshDestinations = useCallback(async () => {
     try {
-      setDestinations(await api.listDestinations(token));
+      setDestinations(await api.listDestinations());
     } catch {
       // silent
     }
-  }, [token]);
+  }, []);
 
   // First-run: try to centre on the user's current location.
   useEffect(() => {
@@ -227,7 +235,7 @@ export function MapScreen({
                     text: 'Reroute',
                     onPress: async () => {
                       try {
-                        await api.createLock(token, nextBay.id);
+                        await api.createLock(nextBay.id);
                         fetchBays();
                       } catch (e: any) {
                         Alert.alert('Could not lock', e?.message ?? 'unknown');
@@ -243,7 +251,7 @@ export function MapScreen({
       }
     };
     return () => ws.close();
-  }, [activeLockBayId, bays, token, fetchBays, filters]);
+  }, [activeLockBayId, bays, fetchBays, filters]);
 
   const bestBay = useMemo(() => pickBestBay(bays, filters), [bays, filters]);
 
@@ -290,7 +298,7 @@ export function MapScreen({
   const parkHere = async (bay: Bay) => {
     try {
       const loc = await Location.getCurrentPositionAsync({});
-      await api.createSession(token, {
+      await api.createSession({
         bay_id: bay.id,
         lat: loc.coords.latitude,
         lng: loc.coords.longitude,
@@ -305,7 +313,7 @@ export function MapScreen({
 
   const lockBay = async (bay: Bay) => {
     try {
-      await api.createLock(token, bay.id);
+      await api.createLock(bay.id);
       setSelected(null);
       fetchBays();
     } catch (e: any) {
@@ -315,9 +323,9 @@ export function MapScreen({
 
   const releaseLock = async (bay: Bay) => {
     try {
-      const cur = await api.currentLock(token);
+      const cur = await api.currentLock();
       if (cur && cur.bay_id === bay.id) {
-        await api.releaseLock(token, cur.id);
+        await api.releaseLock(cur.id);
       }
       setSelected(null);
       fetchBays();
@@ -329,7 +337,7 @@ export function MapScreen({
   const refreshBaySensor = async (bay: Bay) => {
     setRefreshingBayId(bay.id);
     try {
-      const refreshed = await api.refreshBaySensor(bay.id, token);
+      const refreshed = await api.refreshBaySensor(bay.id);
       const updateBay = (b: Bay) =>
         b.id === refreshed.bay_id ? { ...b, sensor: refreshed.sensor } : b;
       setBays((items) => items.map(updateBay));
@@ -370,7 +378,7 @@ export function MapScreen({
     }
     const centre = target ?? { lat: region.latitude, lng: region.longitude };
     try {
-      await api.saveDestination(token, {
+      await api.saveDestination({
         name: newDestName.trim(),
         lat: centre.lat,
         lng: centre.lng,
@@ -402,13 +410,13 @@ export function MapScreen({
   };
 
   const markerColor = (bay: Bay) => {
-    if (bay.lock?.mine) return '#F9A825';
-    if (bay.lock) return '#7B1FA2';
-    if (!bay.sensor) return '#8A8A8A';
-    if (!bay.sensor.fresh) return '#8A8A8A';
-    if (bay.sensor.status === 'unoccupied') return '#2E7D32';
-    if (bay.sensor.status === 'present') return '#C62828';
-    return '#8A8A8A';
+    if (bay.lock?.mine) return colors.status.warning;
+    if (bay.lock) return colors.status.locked;
+    if (!bay.sensor) return colors.status.neutral;
+    if (!bay.sensor.fresh) return colors.status.neutral;
+    if (bay.sensor.status === 'unoccupied') return colors.status.success;
+    if (bay.sensor.status === 'present') return colors.status.danger;
+    return colors.status.neutral;
   };
 
   const canTargetBay = (bay: Bay) => {
@@ -445,6 +453,27 @@ export function MapScreen({
 
   return (
     <View style={styles.container}>
+      {!emailVerified && !verifyBannerDismissed && (
+        <View style={styles.verifyBanner}>
+          <Text style={styles.verifyBannerText}>Verify your email to secure your account</Text>
+          <Pressable
+            disabled={resendBusy}
+            onPress={async () => {
+              setResendBusy(true);
+              try {
+                await onResendVerification();
+              } finally {
+                setResendBusy(false);
+              }
+            }}
+          >
+            <Text style={styles.verifyBannerAction}>{resendBusy ? 'Sending…' : 'Resend'}</Text>
+          </Pressable>
+          <Pressable onPress={() => setVerifyBannerDismissed(true)}>
+            <Text style={styles.verifyBannerAction}>Dismiss</Text>
+          </Pressable>
+        </View>
+      )}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -452,11 +481,13 @@ export function MapScreen({
         onRegionChangeComplete={setRegion}
         showsUserLocation
         showsMyLocationButton
+        userInterfaceStyle={scheme}
+        customMapStyle={scheme === 'dark' ? DARK_MAP_STYLE : []}
       >
         {target && (
           <Marker
             coordinate={{ latitude: target.lat, longitude: target.lng }}
-            pinColor="#1E88E5"
+            pinColor={colors.brand.primary}
             title={target.label}
             description="Destination"
           />
@@ -481,7 +512,7 @@ export function MapScreen({
           <Marker
             key={`lot-${l.id}`}
             coordinate={{ latitude: l.lat, longitude: l.lng }}
-            pinColor="#1565C0"
+            pinColor={colors.status.info}
             onPress={() => {
               setSelected(null);
               setSelectedLot(l);
@@ -545,6 +576,9 @@ export function MapScreen({
           </Pressable>
           <Pressable style={styles.chip} onPress={() => setVoiceModalOpen(true)}>
             <Text style={styles.chipText}>Voice</Text>
+          </Pressable>
+          <Pressable style={styles.chip} onPress={() => setAccountModalOpen(true)}>
+            <Text style={styles.chipText}>Account</Text>
           </Pressable>
           <Pressable style={styles.chip} onPress={signOut}>
             <Text style={styles.chipText}>Sign out</Text>
@@ -786,6 +820,11 @@ export function MapScreen({
       </Modal>
 
       <VoiceSettingsModal visible={voiceModalOpen} onClose={() => setVoiceModalOpen(false)} />
+      <AccountModal
+        visible={accountModalOpen}
+        onClose={() => setAccountModalOpen(false)}
+        onDeleted={signOut}
+      />
 
       {/* Saved destinations sheet */}
       <Modal
@@ -815,14 +854,14 @@ export function MapScreen({
                     style={styles.destDelete}
                     onPress={async () => {
                       try {
-                        await api.deleteDestination(token, item.id);
+                        await api.deleteDestination(item.id);
                         refreshDestinations();
                       } catch (e: any) {
                         Alert.alert('Could not delete', e?.message ?? 'unknown');
                       }
                     }}
                   >
-                    <Text style={{ color: '#C62828' }}>Delete</Text>
+                    <Text style={styles.destDeleteText}>Delete</Text>
                   </Pressable>
                 </View>
               )}
@@ -836,7 +875,7 @@ export function MapScreen({
                 onChangeText={setNewDestName}
               />
               <Pressable style={styles.saveDestBtn} onPress={saveCurrentAsDestination}>
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>
+                <Text style={styles.saveDestBtnText}>Save</Text>
               </Pressable>
             </View>
           </Pressable>
@@ -878,237 +917,258 @@ function formatTimestampAge(iso: string): string {
   return formatAge(secs);
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  spotMarker: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  spotMarkerAvailable: { backgroundColor: '#2E7D32' },
-  spotMarkerTaken: { backgroundColor: 'rgba(198,40,40,0.5)' },
-  spotMarkerUnknown: { backgroundColor: 'rgba(90,90,90,0.45)' },
-  spotMarkerLocked: { backgroundColor: '#7B1FA2' },
-  spotMarkerMine: { backgroundColor: '#F9A825' },
-  topBar: {
-    position: 'absolute',
-    top: 60,
-    left: 12,
-    right: 12,
-    gap: 6,
-  },
-  searchCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    paddingVertical: 6,
-  },
-  searchDropdown: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  searchResultRow: {
-    padding: 12,
-    borderRadius: 8,
-  },
-  searchResultText: { fontSize: 14 },
-  targetPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    alignSelf: 'flex-start',
-    maxWidth: '90%',
-    backgroundColor: '#1E88E5',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  targetPillText: { color: '#fff', fontWeight: '600', flexShrink: 1 },
-  targetPillClear: { color: '#fff', fontWeight: '700', paddingLeft: 6 },
-  actionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  chip: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  chipDisabled: { opacity: 0.6 },
-  chipText: { color: '#333', fontWeight: '600' },
-  bestCard: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 78,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-    gap: 8,
-  },
-  bestLabel: { fontSize: 12, opacity: 0.6 },
-  bestTitle: { fontSize: 16, fontWeight: '700' },
-  bestMeta: { fontSize: 12, opacity: 0.7 },
-  bestActions: { flexDirection: 'row', gap: 6 },
-  smallBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#F9A825',
-  },
-  smallBtnPrimary: { backgroundColor: '#1E88E5' },
-  smallBtnText: { color: '#fff', fontWeight: '700' },
-  statusBar: {
-    position: 'absolute',
-    bottom: 24,
-    left: 12,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  statusText: { fontSize: 14 },
-  attribText: { fontSize: 10, color: '#888', marginTop: 2 },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'flex-end',
-  },
-  card: {
-    backgroundColor: '#fff',
-    padding: 24,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  cardTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4 },
-  cardStreet: { fontSize: 14, opacity: 0.75, marginBottom: 8 },
-  cardMeta: { fontSize: 14, marginBottom: 4 },
-  navBtn: {
-    marginTop: 12,
-    backgroundColor: '#1E88E5',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  navBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  refreshSensorBtn: {
-    marginTop: 12,
-    backgroundColor: '#F0F4F8',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  refreshSensorBtnText: { color: '#2B3945', fontWeight: '700', fontSize: 16 },
-  parkBtn: {
-    marginTop: 12,
-    backgroundColor: '#2E7D32',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  parkBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  lockBtn: {
-    marginTop: 12,
-    backgroundColor: '#F9A825',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  lockBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  filterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  filterName: { fontSize: 15, fontWeight: '600' },
-  filterHint: { fontSize: 12, opacity: 0.6, marginTop: 2 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#F0F0F0',
-  },
-  pillActive: { backgroundColor: '#1E88E5' },
-  pillText: { fontWeight: '600', color: '#333' },
-  pillTextActive: { color: '#fff' },
-  destRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  destName: { fontSize: 16, fontWeight: '600' },
-  destMeta: { fontSize: 12, opacity: 0.6, marginTop: 2 },
-  destDelete: { padding: 8 },
-  destAddRow: {
-    flexDirection: 'row',
-    marginTop: 16,
-    gap: 8,
-  },
-  destInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#d0d0d0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  saveDestBtn: {
-    backgroundColor: '#2E7D32',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.surface.background },
+    spotMarker: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: colors.surface.card,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.18,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    spotMarkerAvailable: { backgroundColor: colors.status.success },
+    spotMarkerTaken: { backgroundColor: colors.status.danger, opacity: 0.5 },
+    spotMarkerUnknown: { backgroundColor: colors.text.tertiary, opacity: 0.55 },
+    spotMarkerLocked: { backgroundColor: colors.status.locked },
+    spotMarkerMine: { backgroundColor: colors.status.warning },
+    verifyBanner: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: colors.brand.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    verifyBannerText: { flex: 1, color: colors.brand.primaryText, fontSize: 13 },
+    verifyBannerAction: { color: colors.brand.primaryText, fontSize: 13, fontWeight: '700' },
+    topBar: {
+      position: 'absolute',
+      top: 60,
+      left: 12,
+      right: 12,
+      gap: 6,
+    },
+    searchCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.surface.card,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 24,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 15,
+      paddingVertical: 6,
+      color: colors.text.primary,
+    },
+    searchDropdown: {
+      backgroundColor: colors.surface.card,
+      borderRadius: 12,
+      padding: 4,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    searchResultRow: {
+      padding: 12,
+      borderRadius: 8,
+    },
+    searchResultText: { fontSize: 14, color: colors.text.primary },
+    targetPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      alignSelf: 'flex-start',
+      maxWidth: '90%',
+      backgroundColor: colors.brand.primary,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 24,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    targetPillText: { color: colors.text.inverse, fontWeight: '600', flexShrink: 1 },
+    targetPillClear: { color: colors.text.inverse, fontWeight: '700', paddingLeft: 6 },
+    actionRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'flex-end',
+      gap: 6,
+    },
+    chip: {
+      backgroundColor: colors.surface.card,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 24,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    chipDisabled: { opacity: 0.6 },
+    chipText: { color: colors.text.secondary, fontWeight: '600' },
+    bestCard: {
+      position: 'absolute',
+      left: 12,
+      right: 12,
+      bottom: 78,
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface.card,
+      padding: 12,
+      borderRadius: 12,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 6,
+      gap: 8,
+    },
+    bestLabel: { fontSize: 12, opacity: 0.6, color: colors.text.primary },
+    bestTitle: { fontSize: 16, fontWeight: '700', color: colors.text.primary },
+    bestMeta: { fontSize: 12, opacity: 0.7, color: colors.text.primary },
+    bestActions: { flexDirection: 'row', gap: 6 },
+    smallBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 8,
+      backgroundColor: colors.status.warning,
+    },
+    smallBtnPrimary: { backgroundColor: colors.brand.primary },
+    smallBtnText: { color: colors.text.inverse, fontWeight: '700' },
+    statusBar: {
+      position: 'absolute',
+      bottom: 24,
+      left: 12,
+      right: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: colors.surface.card,
+      padding: 12,
+      borderRadius: 12,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    statusText: { fontSize: 14, color: colors.text.primary },
+    attribText: { fontSize: 10, color: colors.text.tertiary, marginTop: 2 },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: colors.surface.overlay,
+      justifyContent: 'flex-end',
+    },
+    card: {
+      backgroundColor: colors.surface.card,
+      padding: 24,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+    },
+    cardTitle: { fontSize: 20, fontWeight: '700', marginBottom: 4, color: colors.text.primary },
+    cardStreet: { fontSize: 14, opacity: 0.75, marginBottom: 8, color: colors.text.primary },
+    cardMeta: { fontSize: 14, marginBottom: 4, color: colors.text.primary },
+    navBtn: {
+      marginTop: 12,
+      backgroundColor: colors.brand.primary,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    navBtnText: { color: colors.text.inverse, fontWeight: '700', fontSize: 16 },
+    refreshSensorBtn: {
+      marginTop: 12,
+      backgroundColor: colors.surface.pill,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    refreshSensorBtnText: { color: colors.text.secondary, fontWeight: '700', fontSize: 16 },
+    parkBtn: {
+      marginTop: 12,
+      backgroundColor: colors.status.success,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    parkBtnText: { color: colors.text.inverse, fontWeight: '700', fontSize: 16 },
+    lockBtn: {
+      marginTop: 12,
+      backgroundColor: colors.status.warning,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    lockBtnText: { color: colors.text.inverse, fontWeight: '700', fontSize: 16 },
+    filterRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 12,
+    },
+    filterName: { fontSize: 15, fontWeight: '600', color: colors.text.primary },
+    filterHint: { fontSize: 12, opacity: 0.6, marginTop: 2, color: colors.text.primary },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+    pill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surface.pill,
+    },
+    pillActive: { backgroundColor: colors.brand.primary },
+    pillText: { fontWeight: '600', color: colors.text.secondary },
+    pillTextActive: { color: colors.text.inverse },
+    destRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border.subtle,
+    },
+    destName: { fontSize: 16, fontWeight: '600', color: colors.text.primary },
+    destMeta: { fontSize: 12, opacity: 0.6, marginTop: 2, color: colors.text.primary },
+    destDelete: { padding: 8 },
+    destDeleteText: { color: colors.status.danger },
+    destAddRow: {
+      flexDirection: 'row',
+      marginTop: 16,
+      gap: 8,
+    },
+    destInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border.default,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      color: colors.text.primary,
+    },
+    saveDestBtn: {
+      backgroundColor: colors.status.success,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    saveDestBtnText: { color: colors.text.inverse, fontWeight: '700' },
+  });
+}

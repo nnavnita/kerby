@@ -15,7 +15,7 @@ Notifications.setNotificationHandler({
 /// Register the current device with the backend so we can push lock-taken
 /// and pre-expiry notifications. Silently no-ops on simulators / when the
 /// user denies permission.
-export async function registerForPush(authToken: string): Promise<void> {
+export async function registerForPush(): Promise<void> {
   if (!Constants.isDevice) return;
 
   if (Platform.OS === 'android') {
@@ -41,7 +41,7 @@ export async function registerForPush(authToken: string): Promise<void> {
     projectId ? { projectId } : undefined,
   );
   try {
-    await api.setPushToken(authToken, push.data);
+    await api.setPushToken(push.data);
   } catch (e) {
     // Non-fatal — user can still use the app.
     console.warn('push token upload failed', e);

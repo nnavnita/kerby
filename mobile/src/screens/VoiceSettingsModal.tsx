@@ -19,6 +19,8 @@ import {
   saveVoicePrefs,
   speak,
 } from '../voice';
+import { ThemeColors, ThemeMode } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = {
   visible: boolean;
@@ -29,7 +31,15 @@ type VoiceEntry = Speech.Voice & { identifier: string; name: string; language: s
 
 const PREVIEW_TEXT = 'In 200 meters, turn left onto Bourke Street.';
 
+const THEME_MODE_OPTIONS: { mode: ThemeMode; label: string }[] = [
+  { mode: 'system', label: 'System' },
+  { mode: 'light', label: 'Light' },
+  { mode: 'dark', label: 'Dark' },
+];
+
 export function VoiceSettingsModal({ visible, onClose }: Props) {
+  const { colors, mode, setMode } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [prefs, setPrefs] = useState<VoicePrefs>(getVoicePrefs());
   const [voices, setVoices] = useState<VoiceEntry[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
@@ -101,6 +111,21 @@ export function VoiceSettingsModal({ visible, onClose }: Props) {
           </View>
 
           <ScrollView style={{ maxHeight: 480 }}>
+            <Text style={styles.section}>Appearance</Text>
+            <View style={styles.pillRow}>
+              {THEME_MODE_OPTIONS.map((opt) => (
+                <Pressable
+                  key={opt.mode}
+                  style={[styles.pill, mode === opt.mode && styles.pillActive]}
+                  onPress={() => setMode(opt.mode)}
+                >
+                  <Text style={[styles.pillText, mode === opt.mode && styles.pillTextActive]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
             <Text style={styles.section}>Language</Text>
             <View style={styles.pillRow}>
               {SUPPORTED_LANGUAGES.map((l) => (
@@ -206,83 +231,85 @@ export function VoiceSettingsModal({ visible, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'flex-end',
-  },
-  card: {
-    backgroundColor: '#fff',
-    padding: 24,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  title: { fontSize: 20, fontWeight: '700' },
-  link: { color: '#1E88E5', fontWeight: '600' },
-  section: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#F0F0F0',
-  },
-  pillActive: { backgroundColor: '#1E88E5' },
-  pillText: { color: '#333', fontWeight: '600' },
-  pillTextActive: { color: '#fff' },
-  hint: { fontSize: 13, color: '#666' },
-  voiceList: {
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  voiceRow: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  voiceRowActive: { backgroundColor: '#E3F2FD' },
-  voiceName: { fontSize: 15 },
-  voiceMeta: { fontSize: 12, color: '#888' },
-  footer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 16,
-  },
-  previewBtn: {
-    flex: 1,
-    backgroundColor: '#F0F0F0',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  previewBtnText: { fontSize: 15, fontWeight: '700', color: '#333' },
-  saveBtn: {
-    flex: 1,
-    backgroundColor: '#2E7D32',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-});
+function makeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: colors.surface.overlay,
+      justifyContent: 'flex-end',
+    },
+    card: {
+      backgroundColor: colors.surface.card,
+      padding: 24,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    title: { fontSize: 20, fontWeight: '700', color: colors.text.primary },
+    link: { color: colors.brand.primary, fontWeight: '600' },
+    section: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.text.secondary,
+      marginTop: 16,
+      marginBottom: 8,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    pill: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surface.pill,
+    },
+    pillActive: { backgroundColor: colors.brand.primary },
+    pillText: { color: colors.text.secondary, fontWeight: '600' },
+    pillTextActive: { color: colors.brand.primaryText },
+    hint: { fontSize: 13, color: colors.text.tertiary },
+    voiceList: {
+      borderRadius: 8,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.border.subtle,
+    },
+    voiceRow: {
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border.subtle,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    voiceRowActive: { backgroundColor: colors.surface.selected },
+    voiceName: { fontSize: 15, color: colors.text.primary },
+    voiceMeta: { fontSize: 12, color: colors.text.tertiary },
+    footer: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 16,
+    },
+    previewBtn: {
+      flex: 1,
+      backgroundColor: colors.surface.pill,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    previewBtnText: { fontSize: 15, fontWeight: '700', color: colors.text.secondary },
+    saveBtn: {
+      flex: 1,
+      backgroundColor: colors.status.success,
+      padding: 14,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    saveBtnText: { color: colors.brand.primaryText, fontSize: 15, fontWeight: '700' },
+  });
+}
