@@ -528,28 +528,6 @@ export function MapScreen({
     return 'Unknown';
   };
 
-  const bayVisualStatus = (bay: Bay) => {
-    if (bay.lock?.mine) return 'mine';
-    if (bay.lock) return 'locked';
-    if (!bay.sensor || !bay.sensor.fresh) return 'unknown';
-    return bay.sensor.status;
-  };
-
-  const spotMarkerStyle = (bay: Bay) => {
-    if (bay.lock?.mine) return [styles.spotMarker, styles.spotMarkerMine];
-    if (bay.lock) return [styles.spotMarker, styles.spotMarkerLocked];
-    if (!bay.sensor || !bay.sensor.fresh) {
-      return [styles.spotMarker, styles.spotMarkerUnknown];
-    }
-    if (bay.sensor.status === 'unoccupied') {
-      return [styles.spotMarker, styles.spotMarkerAvailable];
-    }
-    if (bay.sensor.status === 'present') {
-      return [styles.spotMarker, styles.spotMarkerTaken];
-    }
-    return [styles.spotMarker, styles.spotMarkerUnknown];
-  };
-
   return (
     <View style={styles.container}>
       {!emailVerified && !verifyBannerDismissed && (
@@ -598,15 +576,14 @@ export function MapScreen({
               <Marker
                 key={b.id}
                 coordinate={{ latitude: b.lat, longitude: b.lng }}
-                anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
+                pinColor={markerColor(b)}
+                title={`Bay ${b.id}`}
+                description={markerLabel(b)}
                 onPress={() => {
                   setSelectedLot(null);
                   setSelected(b);
                 }}
-              >
-                <View style={spotMarkerStyle(b)} />
-              </Marker>
+              />
             ))
             : null
           : bays.map((b) => (
@@ -1031,18 +1008,6 @@ function formatTimestampAge(iso?: string): string {
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.surface.background },
-    spotMarker: {
-      width: 10,
-      height: 10,
-      borderRadius: 5,
-      borderWidth: 1.5,
-      borderColor: colors.surface.card,
-    },
-    spotMarkerAvailable: { backgroundColor: colors.status.success },
-    spotMarkerTaken: { backgroundColor: colors.status.danger, opacity: 0.5 },
-    spotMarkerUnknown: { backgroundColor: colors.text.tertiary, opacity: 0.55 },
-    spotMarkerLocked: { backgroundColor: colors.status.locked },
-    spotMarkerMine: { backgroundColor: colors.status.warning },
     verifyBanner: {
       position: 'absolute',
       top: 0,
