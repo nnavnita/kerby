@@ -40,7 +40,7 @@ const MELBOURNE_CBD: Region = {
 };
 
 const REFRESH_MS = 15_000;
-const STREET_SPOT_LATITUDE_DELTA = 0.0035;
+const STREET_SPOT_LATITUDE_DELTA = 0.0015;
 const STREET_SPOT_BAY_LIMIT = 50;
 const STREET_SPOT_IDLE_MS = 1_200;
 const REGION_REFRESH_DEBOUNCE_MS = 250;
@@ -583,8 +583,9 @@ export function MapScreen({
             description="Destination"
           />
         )}
-        {streetRenderMode
-          ? bays.map((b) => (
+        {streetQueryMode
+          ? streetRenderMode
+            ? bays.map((b) => (
               <Marker
                 key={`${b.id}:${bayVisualStatus(b)}`}
                 coordinate={{ latitude: b.lat, longitude: b.lng }}
@@ -598,6 +599,7 @@ export function MapScreen({
                 <View style={spotMarkerStyle(b)} />
               </Marker>
             ))
+            : null
           : bays.map((b) => (
               <Marker
                 key={b.id}
