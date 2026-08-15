@@ -30,6 +30,7 @@ import { VoiceSettingsModal } from './VoiceSettingsModal';
 import { ThemeColors } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
 import { DARK_MAP_STYLE } from '../theme/mapStyle';
+import { haversineMeters } from '../geo';
 
 const MELBOURNE_CBD: Region = {
   latitude: -37.814,
@@ -42,6 +43,10 @@ const REFRESH_MS = 15_000;
 const STREET_SPOT_LATITUDE_DELTA = 0.0035;
 const STREET_SPOT_BAY_LIMIT = 50;
 const STREET_SPOT_IDLE_MS = 1_200;
+const REGION_REFRESH_DEBOUNCE_MS = 250;
+const STREET_SPOT_REFETCH_DISTANCE_M = 40;
+const MAP_REFETCH_DISTANCE_M = 120;
+const ZOOM_REFETCH_RATIO = 0.2;
 
 type Filters = {
   availableOnly: boolean;
@@ -86,7 +91,11 @@ export function MapScreen({
   const wsRef = useRef<WebSocket | null>(null);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streetSpotIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const regionRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streetSpotRenderReadyRef = useRef(false);
+  const bayFetchSeqRef = useRef(0);
+  const lotFetchSeqRef = useRef(0);
+  const latestRegionRef = useRef<Region>(MELBOURNE_CBD);
 
   const [region, setRegion] = useState<Region>(MELBOURNE_CBD);
   const [target, setTarget] = useState<Target | null>(null);
@@ -113,15 +122,14 @@ export function MapScreen({
   );
 
   // Centre of the search — destination if set, otherwise map centre.
+  const searchCentreLat = target?.lat ?? region.latitude;
+  const searchCentreLng = target?.lng ?? region.longitude;
   const searchCentre = useMemo(
-    () =>
-      target
-        ? { lat: target.lat, lng: target.lng }
-        : { lat: region.latitude, lng: region.longitude },
-    [target, region.latitude, region.longitude],
+    () => ({ lat: searchCentreLat, lng: searchCentreLng }),
+    [searchCentreLat, searchCentreLng],
   );
-  const regionIsStreetSpotZoom = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
-  const streetSpotMode = regionIsStreetSpotZoom && streetSpotRenderReady;
+  const streetQueryMode = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
+  const streetRenderMode = streetQueryMode && streetSpotRenderReady;
 
   const setStreetSpotReady = useCallback((ready: boolean) => {
     streetSpotRenderReadyRef.current = ready;
@@ -140,7 +148,30 @@ export function MapScreen({
 
   const handleRegionChangeComplete = useCallback(
     (nextRegion: Region) => {
-      setRegion(nextRegion);
+      latestRegionRef.current = nextRegion;
+      const wasStreetQuery = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
+      const isStreetQuery = nextRegion.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
+      const zoomBucketChanged = wasStreetQuery !== isStreetQuery;
+      const zoomRatio =
+        region.latitudeDelta === 0
+          ? 0
+          : Math.abs(nextRegion.latitudeDelta - region.latitudeDelta) / region.latitudeDelta;
+      const refetchDistanceM =
+        wasStreetQuery || isStreetQuery
+          ? STREET_SPOT_REFETCH_DISTANCE_M
+          : MAP_REFETCH_DISTANCE_M;
+      const movedM = haversineMeters(
+        { latitude: region.latitude, longitude: region.longitude },
+        { latitude: nextRegion.latitude, longitude: nextRegion.longitude },
+      );
+
+      if (
+        zoomBucketChanged ||
+        zoomRatio >= ZOOM_REFETCH_RATIO ||
+        movedM >= refetchDistanceM
+      ) {
+        setRegion(nextRegion);
+      }
       clearStreetSpotIdle();
       if (nextRegion.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA) {
         streetSpotIdleTimer.current = setTimeout(() => {
@@ -149,34 +180,38 @@ export function MapScreen({
         }, STREET_SPOT_IDLE_MS);
       }
     },
-    [clearStreetSpotIdle, setStreetSpotReady],
+    [clearStreetSpotIdle, region, setStreetSpotReady],
   );
 
   const fetchBays = useCallback(async () => {
+    const seq = ++bayFetchSeqRef.current;
     setLoading(true);
     try {
       const resp = await api.baysNear({
         lat: searchCentre.lat,
         lng: searchCentre.lng,
         radius_m: Math.max(filters.maxWalkM, 150),
-        available_only: filters.availableOnly && !streetSpotMode,
-        limit: streetSpotMode ? STREET_SPOT_BAY_LIMIT : undefined,
+        available_only: filters.availableOnly && !streetQueryMode,
+        include_no_sensor: filters.includeNoSensor,
+        limit: streetQueryMode ? STREET_SPOT_BAY_LIMIT : undefined,
       });
-      // Apply the client-side "hide no-sensor bays" filter — the backend already
-      // enforces available_only and radius.
-      const filtered = filters.includeNoSensor
-        ? resp.bays
-        : resp.bays.filter((b) => b.sensor != null);
-      setBays(filtered);
+      if (seq === bayFetchSeqRef.current) {
+        setBays(resp.bays);
+      }
     } catch (e: any) {
-      console.warn('bays fetch failed', e?.message);
+      if (seq === bayFetchSeqRef.current) {
+        console.warn('bays fetch failed', e?.message);
+      }
     } finally {
-      setLoading(false);
+      if (seq === bayFetchSeqRef.current) {
+        setLoading(false);
+      }
     }
-  }, [searchCentre.lat, searchCentre.lng, filters, streetSpotMode]);
+  }, [searchCentre.lat, searchCentre.lng, filters, streetQueryMode]);
 
   const fetchLots = useCallback(async () => {
-    if (!filters.includeLots) {
+    const seq = ++lotFetchSeqRef.current;
+    if (!filters.includeLots || streetQueryMode) {
       setLots([]);
       return;
     }
@@ -186,11 +221,21 @@ export function MapScreen({
         lng: searchCentre.lng,
         radius_m: Math.max(filters.maxWalkM * 2, 400),
       });
-      setLots(r);
+      if (seq === lotFetchSeqRef.current) {
+        setLots(r);
+      }
     } catch (e: any) {
-      console.warn('lots fetch failed', e?.message);
+      if (seq === lotFetchSeqRef.current) {
+        console.warn('lots fetch failed', e?.message);
+      }
     }
-  }, [searchCentre.lat, searchCentre.lng, filters.maxWalkM, filters.includeLots]);
+  }, [
+    searchCentre.lat,
+    searchCentre.lng,
+    filters.maxWalkM,
+    filters.includeLots,
+    streetQueryMode,
+  ]);
 
   const refreshMap = useCallback(() => {
     fetchBays();
@@ -218,6 +263,7 @@ export function MapScreen({
             latitudeDelta: 0.008,
             longitudeDelta: 0.008,
           };
+          latestRegionRef.current = r;
           setRegion(r);
           mapRef.current?.animateToRegion(r, 500);
         } catch {
@@ -229,11 +275,23 @@ export function MapScreen({
   }, [refreshDestinations]);
 
   useEffect(() => {
-    refreshMap();
+    if (regionRefreshTimer.current) {
+      clearTimeout(regionRefreshTimer.current);
+    }
+    regionRefreshTimer.current = setTimeout(() => {
+      refreshMap();
+      regionRefreshTimer.current = null;
+    }, REGION_REFRESH_DEBOUNCE_MS);
     const t = setInterval(() => {
       refreshMap();
     }, REFRESH_MS);
-    return () => clearInterval(t);
+    return () => {
+      clearInterval(t);
+      if (regionRefreshTimer.current) {
+        clearTimeout(regionRefreshTimer.current);
+        regionRefreshTimer.current = null;
+      }
+    };
   }, [refreshMap]);
 
   // WS reroute subscription — active when the user holds a lock.
@@ -315,6 +373,7 @@ export function MapScreen({
   useEffect(() => {
     return () => {
       if (streetSpotIdleTimer.current) clearTimeout(streetSpotIdleTimer.current);
+      if (regionRefreshTimer.current) clearTimeout(regionRefreshTimer.current);
     };
   }, []);
 
@@ -329,6 +388,7 @@ export function MapScreen({
       latitudeDelta: 0.006,
       longitudeDelta: 0.006,
     };
+    latestRegionRef.current = region;
     setRegion(region);
     mapRef.current?.animateToRegion(region, 500);
   };
@@ -397,7 +457,11 @@ export function MapScreen({
       Alert.alert('Name required', 'Give this location a name.');
       return;
     }
-    const centre = target ?? { lat: region.latitude, lng: region.longitude };
+    const centre =
+      target ?? {
+        lat: latestRegionRef.current.latitude,
+        lng: latestRegionRef.current.longitude,
+      };
     try {
       await api.saveDestination({
         name: newDestName.trim(),
@@ -419,6 +483,7 @@ export function MapScreen({
       latitudeDelta: 0.006,
       longitudeDelta: 0.006,
     };
+    latestRegionRef.current = r;
     setRegion(r);
     mapRef.current?.animateToRegion(r, 500);
     setDestModalOpen(false);
@@ -452,6 +517,13 @@ export function MapScreen({
     if (bay.sensor.status === 'unoccupied') return 'Available';
     if (bay.sensor.status === 'present') return 'Taken';
     return 'Unknown';
+  };
+
+  const bayVisualStatus = (bay: Bay) => {
+    if (bay.lock?.mine) return 'mine';
+    if (bay.lock) return 'locked';
+    if (!bay.sensor || !bay.sensor.fresh) return 'unknown';
+    return bay.sensor.status;
   };
 
   const spotMarkerStyle = (bay: Bay) => {
@@ -511,14 +583,13 @@ export function MapScreen({
             description="Destination"
           />
         )}
-        {streetSpotMode
+        {streetRenderMode
           ? bays.map((b) => (
               <Marker
-                key={b.id}
+                key={`${b.id}:${bayVisualStatus(b)}`}
                 coordinate={{ latitude: b.lat, longitude: b.lng }}
                 anchor={{ x: 0.5, y: 0.5 }}
-                title={`Bay ${b.id}`}
-                description={markerLabel(b)}
+                tracksViewChanges={false}
                 onPress={() => {
                   setSelectedLot(null);
                   setSelected(b);
@@ -540,7 +611,7 @@ export function MapScreen({
                 }}
               />
             ))}
-        {!streetSpotMode &&
+        {!streetQueryMode &&
           lots.map((l) => (
             <Marker
               key={`lot-${l.id}`}
@@ -955,10 +1026,6 @@ function makeStyles(colors: ThemeColors) {
       borderRadius: 5,
       borderWidth: 1.5,
       borderColor: colors.surface.card,
-      shadowColor: colors.shadow,
-      shadowOpacity: 0.18,
-      shadowRadius: 2,
-      elevation: 2,
     },
     spotMarkerAvailable: { backgroundColor: colors.status.success },
     spotMarkerTaken: { backgroundColor: colors.status.danger, opacity: 0.5 },
