@@ -587,7 +587,7 @@ export function MapScreen({
           ? streetRenderMode
             ? bays.map((b) => (
               <Marker
-                key={`${b.id}:${bayVisualStatus(b)}`}
+                key={b.id}
                 coordinate={{ latitude: b.lat, longitude: b.lng }}
                 anchor={{ x: 0.5, y: 0.5 }}
                 tracksViewChanges={false}
