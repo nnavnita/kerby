@@ -248,6 +248,7 @@ export const api = {
     lng: number;
     radius_m: number;
     available_only: boolean;
+    include_no_sensor?: boolean;
     limit?: number;
   }) => {
     const qs = new URLSearchParams({
@@ -256,6 +257,9 @@ export const api = {
       radius_m: String(opts.radius_m),
       available_only: String(opts.available_only),
     });
+    if (opts.include_no_sensor != null) {
+      qs.set('include_no_sensor', String(opts.include_no_sensor));
+    }
     if (opts.limit != null) qs.set('limit', String(opts.limit));
     return request<NearResponse>(`/bays/near?${qs.toString()}`);
   },
