@@ -71,6 +71,13 @@ fn request_id_header(request_id: Option<&RequestId>) -> String {
 /// the refresh token (see `auth.rs`), not from a long-lived JWT.
 pub const DEFAULT_ACCESS_TOKEN_TTL_SECS: i64 = 15 * 60;
 
+/// Base URL for server-rendered pages linked from emails (password reset,
+/// email verification). Deliberately a plain https:// URL, not the
+/// `kerby://` app scheme — Expo Go (the current beta distribution channel)
+/// cannot intercept custom schemes at all, so a real web page is the only
+/// link that works for every current tester. See bullseye T23.
+pub const WEB_BASE: &str = "https://kerby-api.fly.dev";
+
 pub fn build_router(state: AppState, with_rate_limit: bool) -> Router {
     let mut public_read = Router::new()
         .merge(bays::routes())
