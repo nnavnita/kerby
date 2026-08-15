@@ -39,6 +39,7 @@ const MELBOURNE_CBD: Region = {
 };
 
 const REFRESH_MS = 15_000;
+const STREET_SPOT_LATITUDE_DELTA = 0.0035;
 
 type Filters = {
   availableOnly: boolean;
@@ -114,6 +115,7 @@ export function MapScreen({
         : { lat: region.latitude, lng: region.longitude },
     [target, region.latitude, region.longitude],
   );
+  const streetSpotMode = region.latitudeDelta <= STREET_SPOT_LATITUDE_DELTA;
 
   const fetchBays = useCallback(async () => {
     setLoading(true);
@@ -122,7 +124,8 @@ export function MapScreen({
         lat: searchCentre.lat,
         lng: searchCentre.lng,
         radius_m: Math.max(filters.maxWalkM, 150),
-        available_only: filters.availableOnly,
+        available_only: filters.availableOnly && !streetSpotMode,
+        limit: streetSpotMode ? 500 : undefined,
       });
       // Apply the client-side "hide no-sensor bays" filter — the backend already
       // enforces available_only and radius.
@@ -135,7 +138,7 @@ export function MapScreen({
     } finally {
       setLoading(false);
     }
-  }, [searchCentre.lat, searchCentre.lng, filters]);
+  }, [searchCentre.lat, searchCentre.lng, filters, streetSpotMode]);
 
   const fetchLots = useCallback(async () => {
     if (!filters.includeLots) {
@@ -153,6 +156,11 @@ export function MapScreen({
       console.warn('lots fetch failed', e?.message);
     }
   }, [searchCentre.lat, searchCentre.lng, filters.maxWalkM, filters.includeLots]);
+
+  const refreshMap = useCallback(() => {
+    fetchBays();
+    fetchLots();
+  }, [fetchBays, fetchLots]);
 
   const refreshDestinations = useCallback(async () => {
     try {
@@ -186,14 +194,12 @@ export function MapScreen({
   }, [refreshDestinations]);
 
   useEffect(() => {
-    fetchBays();
-    fetchLots();
+    refreshMap();
     const t = setInterval(() => {
-      fetchBays();
-      fetchLots();
+      refreshMap();
     }, REFRESH_MS);
     return () => clearInterval(t);
-  }, [fetchBays, fetchLots]);
+  }, [refreshMap]);
 
   // WS reroute subscription — active when the user holds a lock.
   useEffect(() => {
@@ -393,6 +399,35 @@ export function MapScreen({
     return colors.status.neutral;
   };
 
+  const canTargetBay = (bay: Bay) => {
+    return bayMatchesFilters(bay, filters);
+  };
+
+  const markerLabel = (bay: Bay) => {
+    if (bay.lock?.mine) return 'Locked by you';
+    if (bay.lock) return 'Locked by another driver';
+    if (!bay.sensor) return 'No sensor coverage';
+    if (!bay.sensor.fresh) return 'Sensor stale';
+    if (bay.sensor.status === 'unoccupied') return 'Available';
+    if (bay.sensor.status === 'present') return 'Taken';
+    return 'Unknown';
+  };
+
+  const spotMarkerStyle = (bay: Bay) => {
+    if (bay.lock?.mine) return [styles.spotMarker, styles.spotMarkerMine];
+    if (bay.lock) return [styles.spotMarker, styles.spotMarkerLocked];
+    if (!bay.sensor || !bay.sensor.fresh) {
+      return [styles.spotMarker, styles.spotMarkerUnknown];
+    }
+    if (bay.sensor.status === 'unoccupied') {
+      return [styles.spotMarker, styles.spotMarkerAvailable];
+    }
+    if (bay.sensor.status === 'present') {
+      return [styles.spotMarker, styles.spotMarkerTaken];
+    }
+    return [styles.spotMarker, styles.spotMarkerUnknown];
+  };
+
   return (
     <View style={styles.container}>
       {!emailVerified && !verifyBannerDismissed && (
@@ -438,12 +473,17 @@ export function MapScreen({
           <Marker
             key={b.id}
             coordinate={{ latitude: b.lat, longitude: b.lng }}
-            pinColor={markerColor(b)}
+            pinColor={streetSpotMode ? undefined : markerColor(b)}
+            anchor={streetSpotMode ? { x: 0.5, y: 0.5 } : undefined}
+            title={`Bay ${b.id}`}
+            description={markerLabel(b)}
             onPress={() => {
               setSelectedLot(null);
               setSelected(b);
             }}
-          />
+          >
+            {streetSpotMode ? <View style={spotMarkerStyle(b)} /> : undefined}
+          </Marker>
         ))}
         {lots.map((l) => (
           <Marker
@@ -498,6 +538,13 @@ export function MapScreen({
           </View>
         )}
         <View style={styles.actionRow}>
+          <Pressable
+            style={[styles.chip, loading && styles.chipDisabled]}
+            onPress={refreshMap}
+            disabled={loading}
+          >
+            <Text style={styles.chipText}>Refresh</Text>
+          </Pressable>
           <Pressable style={styles.chip} onPress={() => setFilterModalOpen(true)}>
             <Text style={styles.chipText}>Filters</Text>
           </Pressable>
@@ -593,13 +640,15 @@ export function MapScreen({
                   </Text>
                 )}
 
-                <Pressable
-                  style={styles.navBtn}
-                  onPress={() => startNav(selected)}
-                >
-                  <Text style={styles.navBtnText}>Navigate</Text>
-                </Pressable>
-                {!selected.lock || selected.lock.mine ? (
+                {canTargetBay(selected) && (
+                  <Pressable
+                    style={styles.navBtn}
+                    onPress={() => startNav(selected)}
+                  >
+                    <Text style={styles.navBtnText}>Navigate</Text>
+                  </Pressable>
+                )}
+                {selected.lock?.mine || (!selected.lock && canTargetBay(selected)) ? (
                   <Pressable
                     style={styles.lockBtn}
                     onPress={() => (selected.lock?.mine ? releaseLock(selected) : lockBay(selected))}
@@ -798,20 +847,20 @@ export function MapScreen({
 }
 
 function pickBestBay(bays: Bay[], filters: Filters): Bay | null {
-  const eligible = bays.filter((b) => {
-    if (b.distance_m > filters.maxWalkM) return false;
-    if (b.lock && !b.lock.mine) return false;
-    if (filters.availableOnly) {
-      if (!b.sensor) return false;
-      if (!b.sensor.fresh) return false;
-      if (b.sensor.status !== 'unoccupied') return false;
-    } else if (!filters.includeNoSensor && !b.sensor) {
-      return false;
-    }
-    return true;
-  });
+  const eligible = bays.filter((b) => bayMatchesFilters(b, filters));
   if (eligible.length === 0) return null;
   return eligible.slice().sort((a, b) => a.distance_m - b.distance_m)[0];
+}
+
+function bayMatchesFilters(bay: Bay, filters: Filters): boolean {
+  if (bay.distance_m > filters.maxWalkM) return false;
+  if (bay.lock && !bay.lock.mine) return false;
+  if (bay.lock?.mine) return true;
+  if (filters.availableOnly) {
+    return !!bay.sensor && bay.sensor.fresh && bay.sensor.status === 'unoccupied';
+  }
+  if (!filters.includeNoSensor && !bay.sensor) return false;
+  return true;
 }
 
 function formatAge(secs?: number): string {
@@ -825,6 +874,22 @@ function formatAge(secs?: number): string {
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.surface.background },
+    spotMarker: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: colors.surface.card,
+      shadowColor: colors.shadow,
+      shadowOpacity: 0.18,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    spotMarkerAvailable: { backgroundColor: colors.status.success },
+    spotMarkerTaken: { backgroundColor: colors.status.danger, opacity: 0.5 },
+    spotMarkerUnknown: { backgroundColor: colors.text.tertiary, opacity: 0.55 },
+    spotMarkerLocked: { backgroundColor: colors.status.locked },
+    spotMarkerMine: { backgroundColor: colors.status.warning },
     verifyBanner: {
       position: 'absolute',
       top: 0,
@@ -899,6 +964,7 @@ function makeStyles(colors: ThemeColors) {
     targetPillClear: { color: colors.text.inverse, fontWeight: '700', paddingLeft: 6 },
     actionRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       justifyContent: 'flex-end',
       gap: 6,
     },
@@ -912,6 +978,7 @@ function makeStyles(colors: ThemeColors) {
       shadowRadius: 6,
       elevation: 4,
     },
+    chipDisabled: { opacity: 0.6 },
     chipText: { color: colors.text.secondary, fontWeight: '600' },
     bestCard: {
       position: 'absolute',

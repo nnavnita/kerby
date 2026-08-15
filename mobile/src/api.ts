@@ -248,6 +248,7 @@ export const api = {
     lng: number;
     radius_m: number;
     available_only: boolean;
+    limit?: number;
   }) => {
     const qs = new URLSearchParams({
       lat: String(opts.lat),
@@ -255,6 +256,7 @@ export const api = {
       radius_m: String(opts.radius_m),
       available_only: String(opts.available_only),
     });
+    if (opts.limit != null) qs.set('limit', String(opts.limit));
     return request<NearResponse>(`/bays/near?${qs.toString()}`);
   },
   createSession: (body: {
