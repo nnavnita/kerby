@@ -37,7 +37,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     storage.setThemeMode(next).catch(() => {});
   };
 
-  const scheme: ColorScheme = mode === 'system' ? systemScheme ?? 'light' : mode;
+  const scheme: ColorScheme = mode === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : mode;
   const colors = themes[scheme];
 
   const value = useMemo<ThemeContextValue>(
