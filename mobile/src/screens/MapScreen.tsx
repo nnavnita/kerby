@@ -622,11 +622,18 @@ export function MapScreen({
                 {selected.street && <Text style={styles.cardStreet}>{selected.street}</Text>}
                 <Text style={styles.cardMeta}>{selected.distance_m} m away</Text>
                 {selected.sensor ? (
-                  <Text style={styles.cardMeta}>
-                    Sensor: {selected.sensor.status}
-                    {selected.sensor.fresh ? '' : ' (stale)'} ·{' '}
-                    {formatAge(selected.sensor.age_secs)}
-                  </Text>
+                  <>
+                    <Text style={styles.cardMeta}>
+                      City reading: {selected.sensor.status}
+                      {selected.sensor.fresh ? '' : ' (stale)'} ·{' '}
+                      {formatSensorAge(selected.sensor.age_secs, selected.sensor.source_updated_at)}
+                    </Text>
+                    {selected.sensor.fetched_at && (
+                      <Text style={styles.cardMeta}>
+                        Kerby checked: {formatTimestampAge(selected.sensor.fetched_at)}
+                      </Text>
+                    )}
+                  </>
                 ) : (
                   <Text style={styles.cardMeta}>No sensor coverage</Text>
                 )}
@@ -869,6 +876,18 @@ function formatAge(secs?: number): string {
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
   return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function formatSensorAge(secs?: number, iso?: string): string {
+  return secs == null ? formatTimestampAge(iso) : formatAge(secs);
+}
+
+function formatTimestampAge(iso?: string): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  return formatAge(secs);
 }
 
 function makeStyles(colors: ThemeColors) {
