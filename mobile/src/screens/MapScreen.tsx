@@ -400,10 +400,7 @@ export function MapScreen({
   };
 
   const canTargetBay = (bay: Bay) => {
-    if (bay.lock?.mine) return true;
-    if (bay.lock) return false;
-    if (!bay.sensor) return filters.includeNoSensor;
-    return bay.sensor.fresh && bay.sensor.status === 'unoccupied';
+    return bayMatchesFilters(bay, filters);
   };
 
   const markerLabel = (bay: Bay) => {
@@ -477,7 +474,7 @@ export function MapScreen({
             key={b.id}
             coordinate={{ latitude: b.lat, longitude: b.lng }}
             pinColor={streetSpotMode ? undefined : markerColor(b)}
-            anchor={{ x: 0.5, y: 0.5 }}
+            anchor={streetSpotMode ? { x: 0.5, y: 0.5 } : undefined}
             title={`Bay ${b.id}`}
             description={markerLabel(b)}
             onPress={() => {
@@ -850,20 +847,20 @@ export function MapScreen({
 }
 
 function pickBestBay(bays: Bay[], filters: Filters): Bay | null {
-  const eligible = bays.filter((b) => {
-    if (b.distance_m > filters.maxWalkM) return false;
-    if (b.lock && !b.lock.mine) return false;
-    if (filters.availableOnly) {
-      if (!b.sensor) return false;
-      if (!b.sensor.fresh) return false;
-      if (b.sensor.status !== 'unoccupied') return false;
-    } else if (!filters.includeNoSensor && !b.sensor) {
-      return false;
-    }
-    return true;
-  });
+  const eligible = bays.filter((b) => bayMatchesFilters(b, filters));
   if (eligible.length === 0) return null;
   return eligible.slice().sort((a, b) => a.distance_m - b.distance_m)[0];
+}
+
+function bayMatchesFilters(bay: Bay, filters: Filters): boolean {
+  if (bay.distance_m > filters.maxWalkM) return false;
+  if (bay.lock && !bay.lock.mine) return false;
+  if (bay.lock?.mine) return true;
+  if (filters.availableOnly) {
+    return !!bay.sensor && bay.sensor.fresh && bay.sensor.status === 'unoccupied';
+  }
+  if (!filters.includeNoSensor && !bay.sensor) return false;
+  return true;
 }
 
 function formatAge(secs?: number): string {
