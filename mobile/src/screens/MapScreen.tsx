@@ -469,33 +469,47 @@ export function MapScreen({
             description="Destination"
           />
         )}
-        {bays.map((b) => (
-          <Marker
-            key={b.id}
-            coordinate={{ latitude: b.lat, longitude: b.lng }}
-            pinColor={streetSpotMode ? undefined : markerColor(b)}
-            anchor={streetSpotMode ? { x: 0.5, y: 0.5 } : undefined}
-            title={`Bay ${b.id}`}
-            description={markerLabel(b)}
-            onPress={() => {
-              setSelectedLot(null);
-              setSelected(b);
-            }}
-          >
-            {streetSpotMode ? <View style={spotMarkerStyle(b)} /> : undefined}
-          </Marker>
-        ))}
-        {lots.map((l) => (
-          <Marker
-            key={`lot-${l.id}`}
-            coordinate={{ latitude: l.lat, longitude: l.lng }}
-            pinColor={colors.status.info}
-            onPress={() => {
-              setSelected(null);
-              setSelectedLot(l);
-            }}
-          />
-        ))}
+        {streetSpotMode
+          ? bays.map((b) => (
+              <Marker
+                key={b.id}
+                coordinate={{ latitude: b.lat, longitude: b.lng }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                title={`Bay ${b.id}`}
+                description={markerLabel(b)}
+                onPress={() => {
+                  setSelectedLot(null);
+                  setSelected(b);
+                }}
+              >
+                <View style={spotMarkerStyle(b)} />
+              </Marker>
+            ))
+          : bays.map((b) => (
+              <Marker
+                key={b.id}
+                coordinate={{ latitude: b.lat, longitude: b.lng }}
+                pinColor={markerColor(b)}
+                title={`Bay ${b.id}`}
+                description={markerLabel(b)}
+                onPress={() => {
+                  setSelectedLot(null);
+                  setSelected(b);
+                }}
+              />
+            ))}
+        {!streetSpotMode &&
+          lots.map((l) => (
+            <Marker
+              key={`lot-${l.id}`}
+              coordinate={{ latitude: l.lat, longitude: l.lng }}
+              pinColor={colors.status.info}
+              onPress={() => {
+                setSelected(null);
+                setSelectedLot(l);
+              }}
+            />
+          ))}
       </MapView>
 
       {/* Search + destination pill */}
