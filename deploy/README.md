@@ -97,7 +97,7 @@ flyctl logs --app kerby-worker | grep "sensor poll"   # should tick every 30s
 ## Beta distribution (mobile)
 
 - **Fastest**: Expo Go + published dev build. Testers install Expo Go and scan a QR.
-- **iOS TestFlight**: needs Apple Developer account ($99/yr). `eas build --platform ios --profile preview` then `eas submit`.
+- **iOS TestFlight**: `eas build --platform ios --profile production` then `eas submit --platform ios`. First submit prompts for Apple ID login and auto-creates the App Store Connect record.
 - **Android internal test track**: needs Google Play Console ($25 one-time). `eas build --platform android --profile preview`.
 
 Configure `eas.json` when ready.
