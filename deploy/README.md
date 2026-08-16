@@ -98,6 +98,7 @@ flyctl logs --app kerby-worker | grep "sensor poll"   # should tick every 30s
 
 - **Fastest**: Expo Go + published dev build. Testers install Expo Go and scan a QR.
 - **iOS TestFlight**: `eas build --platform ios --profile production` then `eas submit --platform ios`. First submit prompts for Apple ID login and auto-creates the App Store Connect record.
-- **Android internal test track**: needs Google Play Console ($25 one-time). `eas build --platform android --profile preview`.
-
-Configure `eas.json` when ready.
+- **Android internal test track**: `eas build --platform android --profile production` then `eas submit --platform android`.
+  - Unlike App Store Connect, Play Console does **not** auto-create the app listing — before the first submit, manually create the app in [Play Console](https://play.google.com/console) with package `app.kerby.mobile` (name, content rating, privacy policy URL, etc.) and do one manual APK/AAB upload to unlock the internal test track.
+  - `eas submit` needs a Google Service Account JSON key: Play Console → Setup → API access → create/link a Google Cloud service account → grant it "Release manager" permission → download the key JSON. Point `eas.json`'s `submit.production.android.serviceAccountKeyPath` at it (keep the file itself out of git — add to `.gitignore`), or pass the path interactively when `eas submit` prompts.
+  - After that, add testers under Play Console → Testing → Internal testing → testers list (any Google account email — no Play Console team membership required, unlike iOS internal testing).

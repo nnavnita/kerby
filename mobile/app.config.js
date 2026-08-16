@@ -26,6 +26,7 @@ module.exports = () => ({
       package: 'app.kerby.mobile',
       versionCode: 1,
       adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',
       },
       permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION'],
