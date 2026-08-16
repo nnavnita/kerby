@@ -1,0 +1,22 @@
+# EAS Build packs from the git repo root and only respects tracked
+# .gitignore files, not local-only excludes like .git/info/exclude —
+# so anything only ignored there (e.g. .claude/worktrees/) must be
+# repeated here explicitly, or it gets swept into the build tarball.
+
+.claude/worktrees/
+/target
+crates/*/target
+
+# Mirror of tracked .gitignore patterns, in case .easignore replaces
+# rather than merges with .gitignore.
+.env
+.env.local
+*.log
+.DS_Store
+.idea/
+.vscode/
+docs/superpowers/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/*.tsbuildinfo
