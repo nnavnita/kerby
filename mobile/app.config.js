@@ -13,6 +13,7 @@ module.exports = () => ({
     ios: {
       supportsTablet: false,
       bundleIdentifier: 'app.kerby.mobile',
+      buildNumber: '1',
       associatedDomains: ['applinks:kerby-api.fly.dev'],
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
@@ -22,6 +23,7 @@ module.exports = () => ({
     },
     android: {
       package: 'app.kerby.mobile',
+      versionCode: 1,
       adaptiveIcon: {
         backgroundColor: '#ffffff',
       },
