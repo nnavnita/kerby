@@ -48,7 +48,7 @@ Production configs live in `deploy/`. See `deploy/README.md`. TL;DR:
 - API + worker → Fly.io (two apps, one Dockerfile via `BIN` build-arg)
 - Postgres+PostGIS → Supabase (Fly Postgres doesn't ship PostGIS)
 - Redis → Upstash
-- Mobile beta → Expo Go (fastest) or `npx eas-cli update` (OTA) — no Apple dev account yet, so no TestFlight
+- Mobile beta → Expo Go / `npx eas-cli update` (OTA) for fastest iteration, or TestFlight via `eas build --platform ios --profile production` + `eas submit`
 
 ## Mobile
 

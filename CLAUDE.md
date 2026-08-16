@@ -53,7 +53,7 @@ docs/            design notes
 
 ## Deploy
 
-API + worker → Fly.io (two apps, one Dockerfile, `BIN` build-arg). Postgres+PostGIS → Supabase (Fly Postgres has no PostGIS). Redis → Upstash. Mobile beta → Expo Go / EAS Update OTA (no Apple dev account, so no TestFlight yet). Details in `deploy/README.md`.
+API + worker → Fly.io (two apps, one Dockerfile, `BIN` build-arg). Postgres+PostGIS → Supabase (Fly Postgres has no PostGIS). Redis → Upstash. Mobile beta → Expo Go / EAS Update OTA for fast iteration, or TestFlight (Apple Developer account enrolled) for closer-to-prod testing. Details in `deploy/README.md`.
 
 ## Roadmap
 

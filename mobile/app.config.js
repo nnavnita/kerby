@@ -10,6 +10,7 @@ module.exports = () => ({
     orientation: 'portrait',
     userInterfaceStyle: 'automatic',
     scheme: 'kerby',
+    icon: './assets/icon.png',
     ios: {
       supportsTablet: false,
       bundleIdentifier: 'app.kerby.mobile',
