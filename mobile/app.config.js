@@ -17,6 +17,7 @@ module.exports = () => ({
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
           'Kerby needs your location to find parking bays near you and guide you back to your car.',
+        ITSAppUsesNonExemptEncryption: false,
       },
     },
     android: {
